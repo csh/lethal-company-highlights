@@ -65,7 +65,8 @@
         </ItemGroup>
         <Delete Files="@(FilesToDelete)" />
 
-        <Copy SourceFiles="$(MSBuildProjectDirectory)/../README.MD" DestinationFolder="$(PublishDir)" />
+        <Copy SourceFiles="$(MSBuildProjectDirectory)/../README.md" DestinationFolder="$(PublishDir)" />
+        <Copy SourceFiles="$(MSBuildProjectDirectory)/../CHANGELOG.md" DestinationFolder="$(PublishDir)" />
         <Copy SourceFiles="$(MSBuildProjectDirectory)/../manifest.json" DestinationFolder="$(PublishDir)" />
         <Copy SourceFiles="$(MSBuildProjectDirectory)/../icon.png" DestinationFolder="$(PublishDir)" />
 

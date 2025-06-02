@@ -2,7 +2,7 @@
   "namespace": "smrkn",
   "name": "LethalCompanyHighlights",
   "description": "Captures player deaths in Lethal Company via Steam Game Recording",
-  "version_number": "0.1.0",
+  "version_number": "0.1.2",
   "dependencies": [
     "BepInEx-BepInExPack-5.4.2100",
     "96_LB-SteamApiUpgrade-0.0.1"
