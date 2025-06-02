@@ -50,7 +50,7 @@
 
     <PropertyGroup>
         <PackageDir Condition="'$(PackageDir)' == ''">$([System.IO.Path]::Combine($(OutputPath),'package'))/</PackageDir>
-        <PackagePath Condition="'$(PackagePath)' == ''">$([System.IO.Path]::Combine($(PackageDir),'publish.zip'))</PackagePath>
+        <PackagePath Condition="'$(PackagePath)' == ''">$([System.IO.Path]::Combine($(PackageDir),'LethalCompanyHighlights-v$(Version).zip'))</PackagePath>
     </PropertyGroup>
 
     <Target Name="PackageClean" AfterTargets="Clean">
