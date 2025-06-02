@@ -1,5 +1,5 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿using System.Collections;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -10,6 +10,7 @@ using LethalConfig.ConfigItems;
 using LethalConfig.ConfigItems.Options;
 using Steamworks;
 using Steamworks.Data;
+using UnityEngine;
 
 namespace LethalCompanyHighlights
 {
@@ -24,6 +25,8 @@ namespace LethalCompanyHighlights
     [BepInDependency("com.elitemastereric.coroner")]
     public class SteamHighlightsPlugin : BaseUnityPlugin
     {
+        internal static SteamHighlightsPlugin Instance { get; private set; }
+
         internal new static ManualLogSource Logger;
 
         internal static ConfigEntry<bool> isEnabledConfigEntry;
@@ -36,10 +39,10 @@ namespace LethalCompanyHighlights
 #pragma warning disable IDE0051
         private void Awake()
         {
+            Instance = this;
             Logger = base.Logger;
 
             Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_GUID} is loaded!");
-
 
             isEnabledConfigEntry = Config.Bind<bool>(
                 "General",
@@ -54,11 +57,11 @@ namespace LethalCompanyHighlights
                 true,
                 "Would you like to open the Steam Overlay upon death?"
             );
-            
+
             overlayDelayConfigEntry = Config.Bind<int>(
                 "General",
                 "Overlay Delay",
-                2,
+                5,
                 "Delay in seconds before the Steam Overlay will open if enabled.\nMust be between 2 and 60 seconds."
             );
 
@@ -205,10 +208,11 @@ namespace LethalCompanyHighlights
     class RoundPatches
     {
         [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.SetLoadingScreen))]
-        static void LoadingPostfix(bool isLoading)
+        static void SetLoadingScreenPostfix(bool isLoading)
         {
             if (isLoading)
             {
+                SteamHighlightsPlugin.Logger.LogDebug("MenuManager::SetLoadingScreen, 'LoadingScreen' phase");
                 SteamTimeline.SetTimelineGameMode(TimelineGameMode.LoadingScreen);
             }
         }
@@ -216,53 +220,61 @@ namespace LethalCompanyHighlights
         [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.SetMapScreenInfoToCurrentLevel))]
         static void SetMapScreenInfoToCurrentLevelPostfix()
         {
+            SteamHighlightsPlugin.Logger.LogDebug("StartOfRound::SetMapScreenInfoToCurrentLevel, 'Orbiting' phase");
             var planetName = StartOfRound.Instance.currentLevel.PlanetName;
             SteamTimeline.SetTimelineGameMode(TimelineGameMode.Staging);
             SteamTimeline.SetTimelineTooltip($"Orbiting {planetName}", 0);
         }
 
-        [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.SceneManager_OnLoadComplete1))]
-        static void OnLoadPostfix(string sceneName)
-        {
-            if (sceneName == "MainMenu" || sceneName == "SampleSceneRelay")
-            {
-                SteamTimeline.EndGamePhase();
-                SteamTimeline.SetTimelineGameMode(TimelineGameMode.Menus);
-            }
-        }
-
         [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.openingDoorsSequence))]
         public static void openingDoorsSequencePostfix()
         {
+            SteamHighlightsPlugin.Logger.LogDebug("StartOfRound::openingDoorsSequence, 'Exploring' phase");
             var planetName = StartOfRound.Instance.currentLevel.PlanetName;
             SteamTimeline.SetTimelineGameMode(TimelineGameMode.Playing);
             SteamTimeline.StartGamePhase();
             SteamTimeline.SetTimelineTooltip($"Exploring {planetName}", -5);
         }
 
-        [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.unloadSceneForAllPlayers))]
-        static void unloadSceneForAllPlayersPostfix()
+        [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.Start))]
+        public static void StartPostfix()
         {
-            var planetName = StartOfRound.Instance.currentLevel.PlanetName;
-            SteamTimeline.SetTimelineGameMode(TimelineGameMode.Staging);
-            SteamTimeline.SetTimelineTooltip($"Orbiting {planetName}", 0);
+            SteamHighlightsPlugin.Logger.LogDebug("MenuManager::Start, 'Menu' phase");
             SteamTimeline.EndGamePhase();
+            SteamTimeline.SetTimelineGameMode(TimelineGameMode.Menus);
+            SteamTimeline.SetTimelineTooltip("Main Menu", -1);
         }
     }
 
     class PlayerPatches
     {
-        [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayer))]
-        [HarmonyPostfix]
-        static void Postfix(PlayerControllerB __instance)
+        internal static ISet<string> _playersKilled = new HashSet<string>();
+
+        [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ReviveDeadPlayers))]
+        static void ReviveDeadPlayersPostfix()
         {
-            SteamHighlightsPlugin.Logger.LogDebug($"PLAYER KILLED: {__instance.playerUsername}");
-            SaveDeathClip(__instance);
+            SteamHighlightsPlugin.Logger.LogDebug("ReviveDeadPlayers called, clearing killed players list.");
+            _playersKilled.Clear();
         }
 
-        static void SaveDeathClip(PlayerControllerB player)
+        [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayer))]
+        [HarmonyPostfix]
+        static void KillPlayerPostfix(PlayerControllerB __instance)
         {
+            SteamHighlightsPlugin.Logger.LogDebug($"Player '{__instance.playerUsername}' died");
             if (SteamHighlightsPlugin.isEnabledConfigEntry.Value == false) return;
+            SteamHighlightsPlugin.Instance.StartCoroutine(SaveDeathClip(__instance));
+        }
+
+        static IEnumerator SaveDeathClip(PlayerControllerB player)
+        {
+            if (_playersKilled.Add(player.playerUsername) == false)
+            {
+                SteamHighlightsPlugin.Logger.LogWarning($"Player '{player.playerUsername}' has already been recorded as dead.");
+                yield break;
+            }
+
+            SteamHighlightsPlugin.Logger.LogInfo($"Recording death clip for player: '{player.playerUsername}'");
 
             var cause = Coroner.API.GetCauseOfDeath(player);
 
@@ -279,7 +291,7 @@ namespace LethalCompanyHighlights
                     "steam_death",
                     1,
                     0,
-                    TimelineEventClipPriority.Standard
+                    TimelineEventClipPriority.Featured
                 );
             }
             else
@@ -298,12 +310,8 @@ namespace LethalCompanyHighlights
 
             if (SteamHighlightsPlugin.openOverlayConfigEntry.Value)
             {
-                // Wait before opening the overlay to allow any surprise/shock to set in. 
-                Task.Run(async () =>
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(SteamHighlightsPlugin.overlayDelayConfigEntry.Value));
-                    SteamTimeline.OpenOverlayToTimelineEvent(handle);
-                });
+                yield return new WaitForSecondsRealtime(SteamHighlightsPlugin.overlayDelayConfigEntry.Value);
+                SteamTimeline.OpenOverlayToTimelineEvent(handle);
             }
         }
     }
