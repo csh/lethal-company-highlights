@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -27,6 +28,7 @@ namespace LethalCompanyHighlights
 
         internal static ConfigEntry<bool> isEnabledConfigEntry;
         internal static ConfigEntry<bool> openOverlayConfigEntry;
+        internal static ConfigEntry<int> overlayDelayConfigEntry;
         internal static ConfigEntry<int> preDeathDurationConfigEntry;
         internal static ConfigEntry<int> postDeathDurationConfigEntry;
         internal static ConfigEntry<RecordingKind> recordingKindConfigEntry;
@@ -51,6 +53,13 @@ namespace LethalCompanyHighlights
                 "Open Overlay on Death",
                 true,
                 "Would you like to open the Steam Overlay upon death?"
+            );
+            
+            overlayDelayConfigEntry = Config.Bind<int>(
+                "General",
+                "Overlay Delay",
+                2,
+                "Delay in seconds before the Steam Overlay will open if enabled.\nMust be between 2 and 60 seconds."
             );
 
             preDeathDurationConfigEntry = Config.Bind<int>(
@@ -95,6 +104,17 @@ namespace LethalCompanyHighlights
                 CanModifyCallback = CanModifySettings
             });
 
+            var overlayDelaySlider = new IntSliderConfigItem(overlayDelayConfigEntry, new IntSliderOptions
+            {
+                Name = "Overlay Delay",
+                Description = "Delay in seconds before the Steam Overlay will open if enabled.\nMust be between 2 and 60 seconds.",
+                Section = "General",
+                Min = 2,
+                Max = 60,
+                RequiresRestart = false,
+                CanModifyCallback = CanModifyOverlaySettings
+            });
+
             var recordingKindDropdown = new EnumDropDownConfigItem<RecordingKind>(recordingKindConfigEntry, new EnumDropDownOptions
             {
                 Name = "Recording Style",
@@ -131,6 +151,7 @@ namespace LethalCompanyHighlights
 
             LethalConfigManager.AddConfigItem(enabledConfigToggle);
             LethalConfigManager.AddConfigItem(openOverlayConfigToggle);
+            LethalConfigManager.AddConfigItem(overlayDelaySlider);
             LethalConfigManager.AddConfigItem(recordingKindDropdown);
             LethalConfigManager.AddConfigItem(preDeathDurationSlider);
             LethalConfigManager.AddConfigItem(postDeathDurationSlider);
@@ -138,6 +159,18 @@ namespace LethalCompanyHighlights
 
             Harmony.CreateAndPatchAll(typeof(RoundPatches));
             Harmony.CreateAndPatchAll(typeof(PlayerPatches));
+        }
+
+        private CanModifyResult CanModifyOverlaySettings()
+        {
+            if (SteamUtils.IsOverlayEnabled && openOverlayConfigEntry.Value)
+            {
+                return CanModifyResult.True();
+            }
+            else
+            {
+                return CanModifyResult.False("Steam Overlay is disabled or you have not enabled the option to open the overlay on death.");
+            }
         }
 
         private CanModifyResult CanModifyDurationSettings()
@@ -268,7 +301,7 @@ namespace LethalCompanyHighlights
                 // Wait before opening the overlay to allow any surprise/shock to set in. 
                 Task.Run(async () =>
                 {
-                    await Task.Delay(1500);
+                    await Task.Delay(TimeSpan.FromSeconds(SteamHighlightsPlugin.overlayDelayConfigEntry.Value));
                     SteamTimeline.OpenOverlayToTimelineEvent(handle);
                 });
             }
