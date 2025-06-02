@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.1</TargetFramework>
+        <AssemblyName>LethalCompanyHighlights</AssemblyName>
+        <Description>Capture deaths in service to the Company via Steam.</Description>
+        <Version>1.0.0</Version>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <LangVersion>latest</LangVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+        <PackageReference Include="BepInEx.Core" Version="5.*" />
+        <PackageReference Include="BepInEx.PluginInfoProps" Version="1.*" />
+        <PackageReference Include="UnityEngine.Modules" Version="2022.3.9" IncludeAssets="compile" />
+        <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.1" PrivateAssets="all" /> 
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
+        <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.2" PrivateAssets="all" />
+    </ItemGroup>
+
+    <PropertyGroup>
+        <LethalCompanyPath>C:\Program Files (x86)\Steam\steamapps\common\Lethal Company</LethalCompanyPath>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Reference Include="LethalConfig">
+            <HintPath>../deps/LethalConfig/LethalConfig.dll</HintPath>
+        </Reference>
+        <Reference Include="Coroner">
+            <HintPath>../deps/Coroner/Coroner.dll</HintPath>
+        </Reference>
+        <Reference Include="Facepunch.Steamworks">
+            <HintPath>../deps/Steamworks/Facepunch.Steamworks.Win64.dll</HintPath>
+        </Reference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Reference Include="Assembly-CSharp" Publicize="true">
+            <HintPath>$(LethalCompanyPath)\Lethal Company_Data\Managed\Assembly-CSharp.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.Netcode.Runtime">
+            <HintPath>$(LethalCompanyPath)\Lethal Company_Data\Managed\Unity.Netcode.Runtime.dll</HintPath>
+        </Reference>
+    </ItemGroup>
+</Project>

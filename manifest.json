@@ -1,0 +1,12 @@
+{
+  "namespace": "smrkn",
+  "name": "LethalCompanyHighlights",
+  "description": "Captures player deaths in Lethal Company via Steam Game Recording",
+  "version_number": "0.1.0",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2100",
+    "96_LB-SteamApiUpgrade-0.0.1"
+  ],
+  "website_url": "https://github.com/csh/lethal-company-highlights",
+  "FullName": "Lethal Company Highlights"
+}
