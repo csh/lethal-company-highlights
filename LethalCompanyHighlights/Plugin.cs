@@ -187,6 +187,11 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             SteamTimeline.EndGamePhase();
         }
         harmony.UnpatchSelf();
+
+        if (StartOfRound.Instance.localPlayerController.gameObject.TryGetComponent<VisibilityTracker>(out var tracker))
+        {
+            Destroy(tracker);
+        }
     }
 
     private CanModifyResult CanModifyOverlaySettings()

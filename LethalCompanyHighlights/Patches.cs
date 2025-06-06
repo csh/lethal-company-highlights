@@ -59,7 +59,7 @@ class RoundPatches
     {
         SteamTimeline.EndGamePhase();
         SteamTimeline.SetTimelineGameMode(TimelineGameMode.Menus);
-        PlayerPatches._playersKilled.Clear();
+        PlayerPatches.playersKilled.Clear();
         currentPhaseId = null;
     }
 
@@ -73,13 +73,27 @@ class RoundPatches
 
 class PlayerPatches
 {
-    internal static ISet<string> _playersKilled = new HashSet<string>();
+    internal static readonly IDictionary<ulong, float> lastSeen = new Dictionary<ulong, float>();
+    internal static readonly ISet<string> playersKilled = new HashSet<string>();
+
+    [HarmonyPostfix, HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.Start))]
+    static void StartPostfix(PlayerControllerB __instance)
+    {
+        if (__instance.IsLocalPlayer == false) return;
+        SteamHighlightsPlugin.Logger.LogDebug("Attaching visibility tracker to local player");
+
+        if (!__instance.gameObject.TryGetComponent<VisibilityTracker>(out _))
+        {
+            __instance.gameObject.AddComponent<VisibilityTracker>().Initialize(lastSeen);
+        }
+    }
 
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ReviveDeadPlayers))]
     static void ReviveDeadPlayersPostfix()
     {
         SteamHighlightsPlugin.Logger.LogDebug("ReviveDeadPlayers called, clearing killed players list.");
-        _playersKilled.Clear();
+        playersKilled.Clear();
+        lastSeen.Clear();
     }
 
     [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayer))]
@@ -91,20 +105,9 @@ class PlayerPatches
         SteamHighlightsPlugin.Instance.StartCoroutine(SaveDeathClip(__instance));
     }
 
-    static bool CanSeePlayer(PlayerControllerB from, PlayerControllerB to, float maxDistance)
+    static bool IsPlayerNearby(PlayerControllerB targetPlayer, float radius)
     {
-        Vector3 eyeOrigin = from.gameplayCamera.transform.position;
-        Vector3 targetPos = to.transform.position + Vector3.up * 0.5f;
-
-        if (Vector3.Distance(eyeOrigin, targetPos) > maxDistance)
-            return false;
-
-        return !Physics.Linecast(eyeOrigin, targetPos, StartOfRound.Instance.collidersAndRoomMaskAndPlayers);
-    }
-
-    static bool IsPlayerNearby(PlayerControllerB originPlayer, PlayerControllerB targetPlayer, float radius)
-    {
-        Vector3 originPos = originPlayer.transform.position;
+        Vector3 originPos = StartOfRound.Instance.localPlayerController.transform.position;
 
         float distSqr = (originPos - targetPlayer.transform.position).sqrMagnitude;
         if (distSqr > radius * radius)
@@ -121,9 +124,14 @@ class PlayerPatches
         return false;
     }
 
+    private static bool HasSeenRecently(PlayerControllerB target, float window)
+    {
+        return lastSeen.TryGetValue(target.playerClientId, out float seenTime) && (Time.time - seenTime) <= window;
+    }
+
     static IEnumerator SaveDeathClip(PlayerControllerB player)
     {
-        if (_playersKilled.Add(player.playerUsername) == false)
+        if (playersKilled.Add(player.playerUsername) == false)
         {
             SteamHighlightsPlugin.Logger.LogWarning($"Player '{player.playerUsername}' has already been recorded as dead.");
             yield break;
@@ -132,20 +140,29 @@ class PlayerPatches
         SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_death", "Died", 50);
 
         PlayerControllerB localPlayer = StartOfRound.Instance.localPlayerController;
-        bool isLocalPlayer = player == localPlayer;
-        bool isLocalAlive = !localPlayer.isPlayerDead;
-        bool isNearby = IsPlayerNearby(localPlayer, player, 15f);
-        bool isVisible = isNearby || CanSeePlayer(localPlayer, player, 25f);
-        bool isSpectated = localPlayer.isPlayerDead && localPlayer.spectatedPlayerScript == player;
 
-        bool shouldSaveClip =
-            isLocalPlayer ||                               // Local player died
-            (isLocalAlive && (isNearby || isVisible)) ||   // Local player was nearby or saw it happen
-            isSpectated;                                   // Local player was spectating the victim
-
-        if (!shouldSaveClip)
+        /**
+         * Least to most expensive checks, hopefully.
+         *
+         * 1. Check if the local player died
+         * 2. Check if the local player observed the death in spectator mode
+         * 3. Check if the local player is alive and the deceased is in close proximity
+         * 4. Check if the local player is alive and has recently had line of sight on the deceased
+         *
+         * This should probably be adequate to prevent capture of deaths taking place on the other side of the map.
+         */
+        if (player != localPlayer)
         {
-            yield break;
+            if (!(localPlayer.isPlayerDead && localPlayer.spectatedPlayerScript == player))
+            {
+                if (!(localPlayer.isPlayerDead == false && IsPlayerNearby(player, 8f)))
+                {
+                    if (!(localPlayer.isPlayerDead == false && HasSeenRecently(player, 10f)))
+                    {
+                        yield break;
+                    }
+                }
+            }
         }
 
         SteamHighlightsPlugin.Logger.LogDebug($"Recording death clip for player: '{player.playerUsername}'");
