@@ -1,5 +1,7 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -26,15 +28,17 @@ namespace LethalCompanyHighlights
     public class SteamHighlightsPlugin : BaseUnityPlugin
     {
         internal static SteamHighlightsPlugin Instance { get; private set; }
-
         internal new static ManualLogSource Logger;
 
         internal static ConfigEntry<bool> isEnabledConfigEntry;
         internal static ConfigEntry<bool> openOverlayConfigEntry;
+        internal static ConfigEntry<bool> onlyMyDeathsConfigEntry;
         internal static ConfigEntry<int> overlayDelayConfigEntry;
         internal static ConfigEntry<int> preDeathDurationConfigEntry;
         internal static ConfigEntry<int> postDeathDurationConfigEntry;
         internal static ConfigEntry<RecordingKind> recordingKindConfigEntry;
+
+        private Harmony harmony;
 
 #pragma warning disable IDE0051
         private void Awake()
@@ -56,6 +60,13 @@ namespace LethalCompanyHighlights
                 "Open Overlay on Death",
                 true,
                 "Would you like to open the Steam Overlay upon death?"
+            );
+
+            onlyMyDeathsConfigEntry = Config.Bind<bool>(
+                "General",
+                "My Deaths Only",
+                true,
+                "Would you like to open the overlay for all deaths, or just yours?"
             );
 
             overlayDelayConfigEntry = Config.Bind<int>(
@@ -102,16 +113,25 @@ namespace LethalCompanyHighlights
             {
                 Name = "Open Overlay on Death",
                 Description = "Would you like to open the Steam Overlay upon death?",
-                Section = "General",
+                Section = "Overlay Settings",
                 RequiresRestart = false,
                 CanModifyCallback = CanModifySettings
+            });
+
+            var onlyMyDeathsConfigToggle = new BoolCheckBoxConfigItem(onlyMyDeathsConfigEntry, new BoolCheckBoxOptions
+            {
+                Name = "My Deaths Only",
+                Description = "Would you like to open the overlay for all deaths, or just yours?",
+                Section = "Overlay Settings",
+                RequiresRestart = false,
+                CanModifyCallback = CanModifyOverlaySettings
             });
 
             var overlayDelaySlider = new IntSliderConfigItem(overlayDelayConfigEntry, new IntSliderOptions
             {
                 Name = "Overlay Delay",
                 Description = "Delay in seconds before the Steam Overlay will open if enabled.\nMust be between 2 and 60 seconds.",
-                Section = "General",
+                Section = "Overlay Settings",
                 Min = 2,
                 Max = 60,
                 RequiresRestart = false,
@@ -121,10 +141,11 @@ namespace LethalCompanyHighlights
             var recordingKindDropdown = new EnumDropDownConfigItem<RecordingKind>(recordingKindConfigEntry, new EnumDropDownOptions
             {
                 Name = "Recording Style",
-                Description = "Choose the kind of recording to use.\n" +
+                Description = "Choose the kind of recording to use.\n\n" +
                               "Marker: Records a marker for the death event, has pretty icons you can click to jump to.\n" +
-                              "Duration not supported. \n" +
-                              "Clip: Marks a clip of the death event with duration support, easier for one-click sharing. No pretty icons :(",
+                              "Duration not supported. \n\n" +
+                              "Clip: Marks a clip of the death event with duration support, easier for one-click sharing.\n" +
+                              "No pretty icons :(",
                 Section = "General",
                 RequiresRestart = false,
                 CanModifyCallback = CanModifySettings
@@ -152,16 +173,27 @@ namespace LethalCompanyHighlights
                 CanModifyCallback = CanModifyDurationSettings
             });
 
+            LethalConfigManager.SkipAutoGen();
             LethalConfigManager.AddConfigItem(enabledConfigToggle);
             LethalConfigManager.AddConfigItem(openOverlayConfigToggle);
+            LethalConfigManager.AddConfigItem(onlyMyDeathsConfigToggle);
             LethalConfigManager.AddConfigItem(overlayDelaySlider);
             LethalConfigManager.AddConfigItem(recordingKindDropdown);
             LethalConfigManager.AddConfigItem(preDeathDurationSlider);
             LethalConfigManager.AddConfigItem(postDeathDurationSlider);
-            LethalConfigManager.SetModDescription("Death Capture");
 
-            Harmony.CreateAndPatchAll(typeof(RoundPatches));
-            Harmony.CreateAndPatchAll(typeof(PlayerPatches));
+            harmony = new Harmony(PluginInfo.PLUGIN_GUID);
+            harmony.PatchAll(typeof(RoundPatches));
+            harmony.PatchAll(typeof(PlayerPatches));
+        }
+
+        private void OnDestroy()
+        {
+            if (isEnabledConfigEntry.Value)
+            {
+                SteamTimeline.EndGamePhase();
+            }
+            harmony.UnpatchSelf();
         }
 
         private CanModifyResult CanModifyOverlaySettings()
@@ -207,6 +239,9 @@ namespace LethalCompanyHighlights
 
     class RoundPatches
     {
+        static readonly Regex RemoveLeadingNumber = new(@"^\d+\s+", RegexOptions.Compiled);
+        static string currentPhaseId = null;
+
         [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.SetLoadingScreen))]
         static void SetLoadingScreenPostfix(bool isLoading)
         {
@@ -221,28 +256,45 @@ namespace LethalCompanyHighlights
         static void SetMapScreenInfoToCurrentLevelPostfix()
         {
             SteamHighlightsPlugin.Logger.LogDebug("StartOfRound::SetMapScreenInfoToCurrentLevel, 'Orbiting' phase");
-            var planetName = StartOfRound.Instance.currentLevel.PlanetName;
+            var planetName = RemoveLeadingNumber.Replace(StartOfRound.Instance.currentLevel.PlanetName, "");
             SteamTimeline.SetTimelineGameMode(TimelineGameMode.Staging);
-            SteamTimeline.SetTimelineTooltip($"Orbiting {planetName}", 0);
+            SteamTimeline.SetTimelineTooltip($"Orbiting {planetName}", -3);
         }
 
         [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.openingDoorsSequence))]
-        public static void openingDoorsSequencePostfix()
+        static void OpeningDoorsSequencePostfix()
         {
             SteamHighlightsPlugin.Logger.LogDebug("StartOfRound::openingDoorsSequence, 'Exploring' phase");
-            var planetName = StartOfRound.Instance.currentLevel.PlanetName;
+
+            var planetName = RemoveLeadingNumber.Replace(StartOfRound.Instance.currentLevel.PlanetName, "");
+            currentPhaseId = $"{planetName}-{Guid.NewGuid()}";
+
             SteamTimeline.SetTimelineGameMode(TimelineGameMode.Playing);
+            SteamTimeline.ClearTimelineTooltip(-2);
             SteamTimeline.StartGamePhase();
-            SteamTimeline.SetTimelineTooltip($"Exploring {planetName}", -5);
+            SteamTimeline.SetGamePhaseId(currentPhaseId);
+            SteamTimeline.AddGamePhaseTag(planetName, "steam_marker", "Planet", 100);
+            foreach (var player in StartOfRound.Instance.allPlayerScripts)
+            {
+                if (!player.isActiveAndEnabled) continue;
+                SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_group", "Players", 75);
+            }
         }
 
         [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.Start))]
-        public static void StartPostfix()
+        static void StartPostfix()
         {
-            SteamHighlightsPlugin.Logger.LogDebug("MenuManager::Start, 'Menu' phase");
             SteamTimeline.EndGamePhase();
             SteamTimeline.SetTimelineGameMode(TimelineGameMode.Menus);
-            SteamTimeline.SetTimelineTooltip("Main Menu", -1);
+            PlayerPatches._playersKilled.Clear();
+            currentPhaseId = null;
+        }
+
+        [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ShipLeave))]
+        static void ShipLeavePostfix()
+        {
+            SteamTimeline.EndGamePhase();
+            currentPhaseId = null;
         }
     }
 
@@ -274,42 +326,51 @@ namespace LethalCompanyHighlights
                 yield break;
             }
 
-            SteamHighlightsPlugin.Logger.LogInfo($"Recording death clip for player: '{player.playerUsername}'");
+            SteamHighlightsPlugin.Logger.LogDebug($"Recording death clip for player: '{player.playerUsername}'");
 
+            SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_death", "Died", 50);
+            
             var cause = Coroner.API.GetCauseOfDeath(player);
 
             var causeOfDeath = cause.HasValue
                 ? Coroner.API.StringifyCauseOfDeath(cause.Value, null)
-                : "Unknown";
+                : "Unknown cause of death.";
+
+            var priority = StartOfRound.Instance.localPlayerController == player ? 100u : 90u;
+            var clipName = $"{player.playerUsername} died";
 
             TimelineEventHandle handle;
             if (SteamHighlightsPlugin.recordingKindConfigEntry.Value == RecordingKind.Marker)
             {
                 handle = SteamTimeline.AddInstantaneousTimelineEvent(
-                    "Death",
-                    $"{player.playerUsername} died: {causeOfDeath}",
+                    clipName,
+                    causeOfDeath,
                     "steam_death",
-                    1,
+                    priority,
                     0,
                     TimelineEventClipPriority.Featured
                 );
             }
             else
             {
-                handle = SteamTimeline.StartRangeTimelineEvent(
-                    "Death",
-                    $"{player.playerUsername} died: {causeOfDeath}",
+                handle = SteamTimeline.AddRangeTimelineEvent(
+                    clipName,
+                    causeOfDeath,
                     "steam_death",
-                    1,
+                    priority,
                     -SteamHighlightsPlugin.preDeathDurationConfigEntry.Value,
+                    SteamHighlightsPlugin.preDeathDurationConfigEntry.Value + SteamHighlightsPlugin.postDeathDurationConfigEntry.Value,
                     TimelineEventClipPriority.Featured
                 );
-
-                SteamTimeline.EndRangeTimelineEvent(handle, SteamHighlightsPlugin.postDeathDurationConfigEntry.Value);
             }
 
             if (SteamHighlightsPlugin.openOverlayConfigEntry.Value)
             {
+                if (SteamHighlightsPlugin.onlyMyDeathsConfigEntry.Value && player != StartOfRound.Instance.localPlayerController)
+                {
+                    yield break;
+                }
+
                 yield return new WaitForSecondsRealtime(SteamHighlightsPlugin.overlayDelayConfigEntry.Value);
                 SteamTimeline.OpenOverlayToTimelineEvent(handle);
             }
