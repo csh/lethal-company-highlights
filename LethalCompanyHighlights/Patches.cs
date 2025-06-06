@@ -88,6 +88,14 @@ class PlayerPatches
         }
     }
 
+    internal static void RemoveFromLastSeen(ulong clientId)
+    {
+        if (lastSeen.Remove(clientId))
+        {
+            SteamHighlightsPlugin.Logger.LogDebug("Removed a client from lastSeen tracker");
+        }
+    }
+
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ReviveDeadPlayers))]
     static void ReviveDeadPlayersPostfix()
     {
