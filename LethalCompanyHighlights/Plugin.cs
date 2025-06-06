@@ -31,7 +31,7 @@ namespace LethalCompanyHighlights
 
         internal static ConfigEntry<bool> isEnabledConfigEntry;
         internal static ConfigEntry<bool> openOverlayConfigEntry;
-        internal static ConfigEntry<bool> onlyLocalDeathsConfigEntry;
+        internal static ConfigEntry<bool> onlyMyDeathsConfigEntry;
         internal static ConfigEntry<int> overlayDelayConfigEntry;
         internal static ConfigEntry<int> preDeathDurationConfigEntry;
         internal static ConfigEntry<int> postDeathDurationConfigEntry;
@@ -59,9 +59,9 @@ namespace LethalCompanyHighlights
                 "Would you like to open the Steam Overlay upon death?"
             );
 
-            onlyLocalDeathsConfigEntry = Config.Bind<bool>(
+            onlyMyDeathsConfigEntry = Config.Bind<bool>(
                 "General",
-                "Only Open Overlay for My Deaths",
+                "My Deaths Only",
                 true,
                 "Would you like to open the overlay for all deaths, or just yours?"
             );
@@ -115,9 +115,9 @@ namespace LethalCompanyHighlights
                 CanModifyCallback = CanModifySettings
             });
 
-            var onlyLocalDeathsConfigToggle = new BoolCheckBoxConfigItem(openOverlayConfigEntry, new BoolCheckBoxOptions
+            var onlyMyDeathsConfigToggle = new BoolCheckBoxConfigItem(openOverlayConfigEntry, new BoolCheckBoxOptions
             {
-                Name = "Only Overlay for My Deaths",
+                Name = "My Deaths Only",
                 Description = "Would you like to open the overlay for all deaths, or just yours?",
                 Section = "General",
                 RequiresRestart = false,
@@ -171,7 +171,7 @@ namespace LethalCompanyHighlights
 
             LethalConfigManager.AddConfigItem(enabledConfigToggle);
             LethalConfigManager.AddConfigItem(openOverlayConfigToggle);
-            LethalConfigManager.AddConfigItem(onlyLocalDeathsConfigToggle);
+            LethalConfigManager.AddConfigItem(onlyMyDeathsConfigToggle);
             LethalConfigManager.AddConfigItem(overlayDelaySlider);
             LethalConfigManager.AddConfigItem(recordingKindDropdown);
             LethalConfigManager.AddConfigItem(preDeathDurationSlider);
@@ -298,16 +298,19 @@ namespace LethalCompanyHighlights
 
             var causeOfDeath = cause.HasValue
                 ? Coroner.API.StringifyCauseOfDeath(cause.Value, null)
-                : "Unknown";
+                : "Unknown cause of death.";
+
+            var priority = StartOfRound.Instance.localPlayerController == player ? 100u : 95u;
+            var clipName = $"{player.playerUsername} died";
 
             TimelineEventHandle handle;
             if (SteamHighlightsPlugin.recordingKindConfigEntry.Value == RecordingKind.Marker)
             {
                 handle = SteamTimeline.AddInstantaneousTimelineEvent(
-                    "Death",
-                    $"{player.playerUsername} died: {causeOfDeath}",
+                    clipName,
+                    causeOfDeath,
                     "steam_death",
-                    1,
+                    priority,
                     0,
                     TimelineEventClipPriority.Featured
                 );
@@ -315,10 +318,10 @@ namespace LethalCompanyHighlights
             else
             {
                 handle = SteamTimeline.StartRangeTimelineEvent(
-                    "Death",
-                    $"{player.playerUsername} died: {causeOfDeath}",
+                    clipName,
+                    causeOfDeath,
                     "steam_death",
-                    1,
+                    priority,
                     -SteamHighlightsPlugin.preDeathDurationConfigEntry.Value,
                     TimelineEventClipPriority.Featured
                 );
@@ -328,7 +331,7 @@ namespace LethalCompanyHighlights
 
             if (SteamHighlightsPlugin.openOverlayConfigEntry.Value)
             {
-                if (SteamHighlightsPlugin.onlyLocalDeathsConfigEntry.Value && StartOfRound.Instance.localPlayerController != player)
+                if (SteamHighlightsPlugin.onlyMyDeathsConfigEntry.Value && player != StartOfRound.Instance.localPlayerController)
                 {
                     yield break;
                 }
