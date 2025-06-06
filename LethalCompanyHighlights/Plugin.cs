@@ -318,6 +318,36 @@ namespace LethalCompanyHighlights
             SteamHighlightsPlugin.Instance.StartCoroutine(SaveDeathClip(__instance));
         }
 
+        static bool CanSeePlayer(PlayerControllerB from, PlayerControllerB to, float maxDistance)
+        {
+            Vector3 eyeOrigin = from.gameplayCamera.transform.position;
+            Vector3 targetPos = to.transform.position + Vector3.up * 0.5f;
+
+            if (Vector3.Distance(eyeOrigin, targetPos) > maxDistance)
+                return false;
+
+            return !Physics.Linecast(eyeOrigin, targetPos, StartOfRound.Instance.collidersAndRoomMaskAndPlayers);
+        }
+
+        static bool IsPlayerNearby(PlayerControllerB originPlayer, PlayerControllerB targetPlayer, float radius)
+        {
+            Vector3 originPos = originPlayer.transform.position;
+
+            float distSqr = (originPos - targetPlayer.transform.position).sqrMagnitude;
+            if (distSqr > radius * radius)
+                return false;
+
+            Collider[] hits = Physics.OverlapSphere(originPos, radius, StartOfRound.Instance.playersMask);
+            foreach (var hit in hits)
+            {
+                if (hit.TryGetComponent<PlayerControllerB>(out var player) && player == targetPlayer)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         static IEnumerator SaveDeathClip(PlayerControllerB player)
         {
             if (_playersKilled.Add(player.playerUsername) == false)
@@ -326,9 +356,27 @@ namespace LethalCompanyHighlights
                 yield break;
             }
 
-            SteamHighlightsPlugin.Logger.LogDebug($"Recording death clip for player: '{player.playerUsername}'");
 
             SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_death", "Died", 50);
+
+            PlayerControllerB localPlayer = StartOfRound.Instance.localPlayerController;
+            bool isLocalPlayer = player == localPlayer;
+            bool isLocalAlive = !localPlayer.isPlayerDead;
+            bool isNearby = IsPlayerNearby(localPlayer, player, 15f);
+            bool isVisible = isNearby || CanSeePlayer(localPlayer, player, 25f);
+            bool isSpectated = localPlayer.isPlayerDead && localPlayer.spectatedPlayerScript == player;
+
+            bool shouldSaveClip =
+                isLocalPlayer ||                               // Local player died
+                (isLocalAlive && (isNearby || isVisible)) ||   // Local player was nearby or saw it happen
+                isSpectated;                                   // Local player was spectating the victim
+
+            if (!shouldSaveClip)
+            {
+                yield break;
+            }
+
+            SteamHighlightsPlugin.Logger.LogDebug($"Recording death clip for player: '{player.playerUsername}'");
             
             var cause = Coroner.API.GetCauseOfDeath(player);
 
