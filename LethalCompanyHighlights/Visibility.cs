@@ -25,10 +25,10 @@ public class VisibilityTracker : MonoBehaviour
         Vector3 eyeOrigin = from.gameplayCamera.transform.position;
         Vector3 targetPos = to.transform.position + Vector3.up * 0.5f;
 
-        if (Vector3.Distance(eyeOrigin, targetPos) > maxDistance)
+        if ((eyeOrigin - targetPos).sqrMagnitude > maxDistance * maxDistance)
             return false;
 
-        return !Physics.Linecast(eyeOrigin, targetPos, StartOfRound.Instance.collidersAndRoomMaskAndPlayers);
+        return !Physics.Linecast(eyeOrigin, targetPos, StartOfRound.Instance.collidersAndRoomMask);
     }
 
     private IEnumerator UpdateVisibility()
