@@ -31,6 +31,7 @@ namespace LethalCompanyHighlights
 
         internal static ConfigEntry<bool> isEnabledConfigEntry;
         internal static ConfigEntry<bool> openOverlayConfigEntry;
+        internal static ConfigEntry<bool> onlyLocalDeathsConfigEntry;
         internal static ConfigEntry<int> overlayDelayConfigEntry;
         internal static ConfigEntry<int> preDeathDurationConfigEntry;
         internal static ConfigEntry<int> postDeathDurationConfigEntry;
@@ -56,6 +57,13 @@ namespace LethalCompanyHighlights
                 "Open Overlay on Death",
                 true,
                 "Would you like to open the Steam Overlay upon death?"
+            );
+
+            onlyLocalDeathsConfigEntry = Config.Bind<bool>(
+                "General",
+                "Only Open Overlay for My Deaths",
+                true,
+                "Would you like to open the overlay for all deaths, or just yours?"
             );
 
             overlayDelayConfigEntry = Config.Bind<int>(
@@ -107,6 +115,15 @@ namespace LethalCompanyHighlights
                 CanModifyCallback = CanModifySettings
             });
 
+            var onlyLocalDeathsConfigToggle = new BoolCheckBoxConfigItem(openOverlayConfigEntry, new BoolCheckBoxOptions
+            {
+                Name = "Only Overlay for My Deaths",
+                Description = "Would you like to open the overlay for all deaths, or just yours?",
+                Section = "General",
+                RequiresRestart = false,
+                CanModifyCallback = CanModifyOverlaySettings
+            });
+
             var overlayDelaySlider = new IntSliderConfigItem(overlayDelayConfigEntry, new IntSliderOptions
             {
                 Name = "Overlay Delay",
@@ -154,6 +171,7 @@ namespace LethalCompanyHighlights
 
             LethalConfigManager.AddConfigItem(enabledConfigToggle);
             LethalConfigManager.AddConfigItem(openOverlayConfigToggle);
+            LethalConfigManager.AddConfigItem(onlyLocalDeathsConfigToggle);
             LethalConfigManager.AddConfigItem(overlayDelaySlider);
             LethalConfigManager.AddConfigItem(recordingKindDropdown);
             LethalConfigManager.AddConfigItem(preDeathDurationSlider);
@@ -310,6 +328,11 @@ namespace LethalCompanyHighlights
 
             if (SteamHighlightsPlugin.openOverlayConfigEntry.Value)
             {
+                if (SteamHighlightsPlugin.onlyLocalDeathsConfigEntry.Value && StartOfRound.Instance.localPlayerController != player)
+                {
+                    yield break;
+                }
+
                 yield return new WaitForSecondsRealtime(SteamHighlightsPlugin.overlayDelayConfigEntry.Value);
                 SteamTimeline.OpenOverlayToTimelineEvent(handle);
             }
