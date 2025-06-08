@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
         <TargetFramework>netstandard2.1</TargetFramework>
         <AssemblyName>LethalCompanyHighlights</AssemblyName>
@@ -13,74 +12,51 @@
         <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
         <PackageReference Include="BepInEx.Core" Version="5.*" />
         <PackageReference Include="BepInEx.PluginInfoProps" Version="1.*" />
+        <PackageReference Include="TeamBMX.LobbyCompatibility" Version="1.*" PrivateAssets="all"/>
         <PackageReference Include="UnityEngine.Modules" Version="2022.3.9" IncludeAssets="compile" />
         <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.1" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
-        <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.2"
-            PrivateAssets="all" />
+        <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.2" PrivateAssets="all" />
     </ItemGroup>
 
-    <PropertyGroup>
-        <LethalCompanyPath>C:\Program Files (x86)\Steam\steamapps\common\Lethal Company</LethalCompanyPath>
+    <PropertyGroup Label="BepInEx Attributes">
+        <BepInExPluginGuid>com.smrkn.lethal-company-highlights</BepInExPluginGuid>
+    </PropertyGroup>
+    
+    <PropertyGroup Label="Game Path">
+        <LethalCompanyPath Condition="$(LethalCompanyPath) == ''">C:\Program Files (x86)\Steam\steamapps\common\Lethal Company</LethalCompanyPath>
     </PropertyGroup>
 
-    <ItemGroup>
-        <Reference Include="LethalConfig">
+    <ItemGroup Label="Plugin Dependencies">
+        <Reference Include="LethalConfig" PrivateAssets="all">
             <HintPath>../deps/LethalConfig/LethalConfig.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="Coroner">
             <HintPath>../deps/Coroner/Coroner.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="Facepunch.Steamworks">
             <HintPath>../deps/Steamworks/Facepunch.Steamworks.Win64.dll</HintPath>
+            <Private>false</Private>
         </Reference>
     </ItemGroup>
-
-    <ItemGroup>
+    <ItemGroup Label="Game DLLs">
         <Reference Include="Assembly-CSharp" Publicize="true">
             <HintPath>$(LethalCompanyPath)\Lethal Company_Data\Managed\Assembly-CSharp.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="Unity.Netcode.Runtime">
             <HintPath>$(LethalCompanyPath)\Lethal Company_Data\Managed\Unity.Netcode.Runtime.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="UnityEngine.UI">
             <HintPath>$(LethalCompanyPath)\Lethal Company_Data\Managed\UnityEngine.UI.dll</HintPath>
+            <Private>false</Private>
         </Reference>
     </ItemGroup>
 
-    <PropertyGroup>
-        <PackageDir Condition="'$(PackageDir)' == ''">$([System.IO.Path]::Combine($(OutputPath),'package'))/</PackageDir>
-        <PackagePath Condition="'$(PackagePath)' == ''">$([System.IO.Path]::Combine($(PackageDir),'$(AssemblyName)-v$(Version).zip'))</PackagePath>
-    </PropertyGroup>
-
-    <Target Name="PackageClean" AfterTargets="Clean">
-        <Delete Files="$(PackagePath)" />
-    </Target>
-
-    <Target Name="Thunderstore" AfterTargets="Publish">
-        <MakeDir Directories="$(PackageDir)" />  
-
-        <ItemGroup>
-            <FilesToDelete Include="$(PublishDir)**\*" Exclude="$(PublishDir)/$(AssemblyName).dll" />
-        </ItemGroup>
-        <Delete Files="@(FilesToDelete)" />
-
-        <Copy SourceFiles="$(MSBuildProjectDirectory)/../README.md" DestinationFolder="$(PublishDir)" />
-        <Copy SourceFiles="$(MSBuildProjectDirectory)/../manifest.json" DestinationFolder="$(PublishDir)" />
-        <Copy SourceFiles="$(MSBuildProjectDirectory)/../icon.png" DestinationFolder="$(PublishDir)" />
-
-        <PropertyGroup>
-            <ManifestFile Condition="'$(ManifestFile)' == ''">$([System.IO.Path]::Combine($(PublishDir),'manifest.json'))</ManifestFile>
-        </PropertyGroup>
-
-        <ReadLinesFromFile File="$(ManifestFile)">
-            <Output TaskParameter="Lines" ItemName="ManifestLines" />
-        </ReadLinesFromFile>
-
-        <WriteLinesToFile File="$(ManifestFile)" Lines="@(ManifestLines->Replace('{__VERSION__}', '$(Version)'))" Overwrite="true" />
-        
-        <ZipDirectory Overwrite="true" SourceDirectory="$(MSBuildProjectDirectory)/$(PublishDir)" DestinationFile="$(PackagePath)" />
-    </Target>
+    <Import Project="Thunderstore.targets" />
 </Project>
