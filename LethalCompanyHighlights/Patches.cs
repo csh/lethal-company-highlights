@@ -11,6 +11,21 @@ using UnityEngine;
 
 namespace LethalCompanyHighlights;
 
+internal static class SimpleDeathTracker
+{
+    private static readonly ISet<ulong> PlayersKilled = new HashSet<ulong>();
+
+    internal static bool PlayerKilled(PlayerControllerB player)
+    {
+        return PlayersKilled.Add(player.playerClientId);
+    }
+
+    internal static void Reset()
+    {
+        PlayersKilled.Clear();
+    }
+}
+
 internal class RoundPatches
 {
     private static readonly Regex RemoveLeadingNumber = new(@"^\d+\s+", RegexOptions.Compiled);
@@ -64,7 +79,7 @@ internal class RoundPatches
     {
         SteamTimeline.EndGamePhase();
         SteamTimeline.SetTimelineGameMode(TimelineGameMode.Menus);
-        PlayerPatches.PlayersKilled.Clear();
+        SimpleDeathTracker.Reset();
         _currentPhaseId = null;
     }
 
@@ -82,14 +97,12 @@ internal class RoundPatches
 
 internal class PlayerPatches
 {
-    internal static readonly ISet<ulong> PlayersKilled = new HashSet<ulong>();
-
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ReviveDeadPlayers))]
     private static void ReviveDeadPlayersPostfix()
     {
         if (SteamHighlightsPlugin.IsEnabledConfigEntry.Value == false) return;
         SteamHighlightsPlugin.Logger.LogDebug("ReviveDeadPlayers called, clearing killed players list.");
-        PlayersKilled.Clear();
+        SimpleDeathTracker.Reset();
     }
 
     [HarmonyPostfix, HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayer))]
@@ -118,7 +131,7 @@ internal class PlayerPatches
 
     private static IEnumerator SaveDeathClip(PlayerControllerB player)
     {
-        if (PlayersKilled.Add(player.playerClientId) == false)
+        if (SimpleDeathTracker.PlayerKilled(player) == false)
         {
             SteamHighlightsPlugin.Logger.LogDebug($"Player '{player.playerUsername}' has already been recorded as dead.");
             yield break;
