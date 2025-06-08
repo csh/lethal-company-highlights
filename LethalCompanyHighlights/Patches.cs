@@ -77,6 +77,7 @@ internal class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.Start))]
     private static void StartPostfix()
     {
+        if (GameNetworkManager.Instance.disableSteam) return;
         SteamTimeline.EndGamePhase();
         SteamTimeline.SetTimelineGameMode(TimelineGameMode.Menus);
         SimpleDeathTracker.Reset();
@@ -100,7 +101,6 @@ internal class PlayerPatches
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ReviveDeadPlayers))]
     private static void ReviveDeadPlayersPostfix()
     {
-        if (SteamHighlightsPlugin.IsEnabledConfigEntry.Value == false) return;
         SteamHighlightsPlugin.Logger.LogDebug("ReviveDeadPlayers called, clearing killed players list.");
         SimpleDeathTracker.Reset();
     }
@@ -108,14 +108,12 @@ internal class PlayerPatches
     [HarmonyPostfix, HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayer))]
     private static void KillPlayerPostfix([SuppressMessage("ReSharper", "InconsistentNaming")] PlayerControllerB __instance)
     {
-        if (SteamHighlightsPlugin.IsEnabledConfigEntry.Value == false) return;
         SteamHighlightsPlugin.Instance.StartCoroutine(SaveDeathClip(__instance));
     }
 
     [HarmonyPostfix, HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayerClientRpc))]
     private static void KillPlayerClientRpcPostfix(int playerId)
     {
-        if (SteamHighlightsPlugin.IsEnabledConfigEntry.Value == false) return;
         var player = StartOfRound.Instance.allPlayerScripts[playerId];
         if (player && player.isActiveAndEnabled)
         {
@@ -131,6 +129,8 @@ internal class PlayerPatches
 
     private static IEnumerator SaveDeathClip(PlayerControllerB player)
     {
+        if (SteamHighlightsPlugin.IsEnabledConfigEntry.Value == false) yield break;
+        
         if (SimpleDeathTracker.PlayerKilled(player) == false)
         {
             SteamHighlightsPlugin.Logger.LogDebug($"Player '{player.playerUsername}' has already been recorded as dead.");
@@ -139,7 +139,10 @@ internal class PlayerPatches
 
         SteamHighlightsPlugin.Logger.LogDebug($"Player '{player.playerUsername}' died");
 
-        SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_death", "Died", 50);
+        if (GameNetworkManager.Instance.disableSteam == false)
+        {
+            SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_death", "Died", 50);
+        }
 
         var localPlayer = StartOfRound.Instance.localPlayerController;
 
@@ -171,7 +174,7 @@ internal class PlayerPatches
                 SteamHighlightsPlugin.Logger.LogDebug($"{player.playerUsername} died near us");
                 shouldClip = true;
                 break;
-            case false when VisibilityTracker.Instance.HasSeenRecently(player, 20f):
+            case false when VisibilityTracker.Instance.HasSeenRecently(player, VisibilityTracker.SecondsToCheck):
                 SteamHighlightsPlugin.Logger.LogDebug($"{player.playerUsername} was seen within the last 20 seconds");
                 shouldClip = true;
                 break;

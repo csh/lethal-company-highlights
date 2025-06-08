@@ -1,13 +1,10 @@
-﻿using System;
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using LethalConfig;
 using LethalConfig.ConfigItems;
 using LethalConfig.ConfigItems.Options;
-using LobbyCompatibility.Enums;
-using LobbyCompatibility.Features;
 using Steamworks;
 using UnityEngine;
 
@@ -50,11 +47,6 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
 
         Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_NAME} is loaded!");
         
-        if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("BMX.LobbyCompatibility"))
-        {
-            PluginHelper.RegisterPlugin(PluginInfo.PLUGIN_GUID, Version.Parse(PluginInfo.PLUGIN_VERSION), CompatibilityLevel.ClientOnly, VersionStrictness.None);
-        }
-
         IsEnabledConfigEntry = Config.Bind(
             "General",
             "Enable",
@@ -189,6 +181,12 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
         LethalConfigManager.AddConfigItem(preDeathDurationSlider);
         LethalConfigManager.AddConfigItem(postDeathDurationSlider);
 
+        if (GameNetworkManager.Instance && GameNetworkManager.Instance.disableSteam)
+        {
+            Logger.LogWarning("Steam integration is disabled, if you're playing in LAN mode I'm afraid this mod won't work.");
+            return;
+        }
+
         _harmony = new Harmony(PluginInfo.PLUGIN_GUID);
         _harmony.PatchAll(typeof(RoundPatches));
         _harmony.PatchAll(typeof(PlayerPatches));
@@ -196,13 +194,14 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
-        if (IsEnabledConfigEntry.Value)
+        if ((GameNetworkManager.Instance && GameNetworkManager.Instance.disableSteam == false) && IsEnabledConfigEntry.Value)
         {
             SteamTimeline.EndGamePhase();
         }
-        _harmony.UnpatchSelf();
+        _harmony?.UnpatchSelf();
 
-        if (StartOfRound.Instance.localPlayerController.gameObject.TryGetComponent<VisibilityTracker>(out var tracker))
+        // Ensure we cleanup any currently running coroutines
+        foreach (var tracker in FindObjectsOfType<VisibilityTracker>())
         {
             Destroy(tracker);
         }

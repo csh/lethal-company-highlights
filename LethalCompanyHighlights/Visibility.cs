@@ -1,17 +1,22 @@
 using System.Collections;
 using System.Collections.Generic;
-using System.Text;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using GameNetcodeStuff;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace LethalCompanyHighlights;
 
 public class VisibilityTracker : MonoBehaviour
 {
     internal static VisibilityTracker Instance { get; private set; }
+    
+    private const float DefaultFieldOfView = 66f;
+    private const float DistanceToCheck = 20f;
+    internal const float SecondsToCheck = 20f;
 
     private readonly IDictionary<ulong, float> _lastSeen = new Dictionary<ulong, float>();
+    private readonly IList<ulong> _stalePlayerIds = new List<ulong>();
     private Coroutine _visibilityCoroutine;
     private bool _isRunning = true;
 
@@ -19,6 +24,7 @@ public class VisibilityTracker : MonoBehaviour
     {
         if (Instance)
         {
+            SteamHighlightsPlugin.Logger.LogWarning($"A new instance of {nameof(VisibilityTracker)} has been created, destroying the old one.");
             Destroy(Instance);
         }
         Instance = this;
@@ -28,130 +34,88 @@ public class VisibilityTracker : MonoBehaviour
     {
         _isRunning = true;
         _visibilityCoroutine = StartCoroutine(UpdateVisibility());
-        
-#if DEBUG
-        StartCoroutine(InitDebugHud());
-#endif
     }
 
-    // TODO: More efficiency?
     private static bool IsPlayerVisible(PlayerControllerB from, PlayerControllerB to, float maxDistance)
     {
         var origin = from.gameplayCamera
-        ? from.gameplayCamera.transform.position
-        : from.transform.position + Vector3.up * 0.6f;
+            ? from.gameplayCamera.transform.position
+            : from.transform.position + Vector3.up * 0.6f;
+
+        var forward = from.gameplayCamera
+            ? from.gameplayCamera.transform.forward
+            : from.transform.forward;
 
         var target = to.transform.position + Vector3.up * 0.6f;
-        if ((origin - target).sqrMagnitude > maxDistance * maxDistance)
+        var toTarget = (target - origin);
+        var sqrDistance = toTarget.sqrMagnitude;
+
+        if (sqrDistance > maxDistance * maxDistance)
         {
-            SteamHighlightsPlugin.Logger.LogDebug($"Player '{to.playerUsername}' is outside of maxDistance");
             return false;
         }
 
-        if (!Physics.Linecast(origin, target, out var hit, StartOfRound.Instance.collidersAndRoomMask))
+        var dirToTarget = toTarget.normalized;
+        var dot = Vector3.Dot(forward, dirToTarget);
+        var fov = Mathf.Clamp(from.gameplayCamera ? from.gameplayCamera.fieldOfView : DefaultFieldOfView, DefaultFieldOfView, 150f);
+        var cosHalfFOV = Mathf.Cos(fov * 0.5f * Mathf.Deg2Rad);
+
+        if (dot < cosHalfFOV)
         {
-            SteamHighlightsPlugin.Logger.LogDebug($"Player '{to.playerUsername}' is not occluded by anything");
-            return true;
+            return false;
         }
-        
-        var hitPlayer = hit.collider.GetComponentInParent<PlayerControllerB>();
-        return hitPlayer == to;
+
+        if (Physics.Linecast(origin, target, out _, StartOfRound.Instance.collidersAndRoomMask))
+        {
+            SteamHighlightsPlugin.Logger.LogDebug($"Player '{to.playerUsername}' is occluded by something");
+            return false;
+        }
+
+        SteamHighlightsPlugin.Logger.LogDebug($"Player '{to.playerUsername}' is visible");
+        return true;
     }
 
+    [SuppressMessage("ReSharper", "LoopCanBeConvertedToQuery")]
     private IEnumerator UpdateVisibility()
     {
         var localPlayer = GetComponentInParent<PlayerControllerB>();
         while (_isRunning && localPlayer.isActiveAndEnabled)
         {
-            foreach (var player in StartOfRound.Instance.allPlayerScripts)
+            var now = Time.unscaledTime;
+            foreach (var (playerId, seenAt) in _lastSeen)
             {
-                if (player == localPlayer || player.isActiveAndEnabled == false || player.isPlayerDead) continue;
-                if (!IsPlayerVisible(localPlayer, player, 30f)) continue;
-                _lastSeen[player.playerClientId] = Time.unscaledTime;
+                if (now - seenAt > SecondsToCheck)
+                {
+                    _stalePlayerIds.Add(playerId);
+                }
+            }
+            
+            foreach (var playerId in _stalePlayerIds)
+            {
+                _lastSeen.Remove(playerId);
+            }
+            
+            _stalePlayerIds.Clear();
+            
+            foreach (var player in StartOfRound.Instance.allPlayerScripts.Where(player => IsHumanPlayerAlive(player) && IsPlayerVisible(localPlayer, player, DistanceToCheck)))
+            {
+                _lastSeen[player.playerClientId] = now;
             }
 
-#if DEBUG
-            UpdateDebugOverlay();
-#endif
-
-            yield return new WaitForSeconds(0.5f);
+            yield return new WaitForSecondsRealtime(0.5f);
         }
     }
 
-#if DEBUG
-    private bool _isDebug = true;
-    private GameObject _textObject;
-    private Text _uiText;
-
-    private void UpdateDebugOverlay()
+    private static bool IsHumanPlayerAlive(PlayerControllerB player)
     {
-        if (!_isDebug || !_uiText) return;
-        
-        if (_lastSeen.Count == 0)
-        {
-            _uiText.text = "Highlight Debug HUD:\n"
-                           + "Nothing to report, you're alone.";
-        }
-        else
-        {
-            var builder = new StringBuilder();
-            foreach (var playerId in _lastSeen.Keys)
-            {
-                var player = StartOfRound.Instance.allPlayerScripts[playerId];
-                if (!player || player.isActiveAndEnabled == false) continue;
-                builder.Append($"{player.playerUsername} => {HasSeenRecently(player, 20)}\n");
-            }
-            _uiText.text = $"Highlight Debug HUD:\n{builder}";
-        }
+        return player && player.isPlayerControlled && player.isPlayerDead == false;
     }
-
-    public void Update()
-    {
-        if (Input.GetKey(KeyCode.F10))
-        {
-            _isDebug = !_isDebug;
-        }
-    }
-
-    private IEnumerator InitDebugHud()
-    {
-        if (_uiText) yield break;
-        
-        yield return new WaitForSeconds(2f);
-
-        var canvas = FindObjectOfType<Canvas>();
-        if (!canvas)
-        {
-            var canvasGameObject = new GameObject("CustomHUDCanvas");
-            canvas = canvasGameObject.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvasGameObject.AddComponent<CanvasScaler>();
-            canvasGameObject.AddComponent<GraphicRaycaster>();
-        }
-
-        _textObject = new GameObject("HighlightVisibilityDebugHUD");
-        _textObject.transform.SetParent(canvas.transform);
-
-        _uiText = _textObject.AddComponent<Text>();
-        _uiText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        _uiText.text = "Highlight Debug HUD Initialized!";
-        _uiText.fontSize = 24;
-        _uiText.color = Color.white;
-        _uiText.alignment = TextAnchor.LowerRight;
-
-        var rectTransform = _uiText.GetComponent<RectTransform>();
-        rectTransform.anchorMin = new Vector2(1, 0); 
-        rectTransform.anchorMax = new Vector2(1, 0);
-        rectTransform.pivot = new Vector2(1, 0);      
-        rectTransform.anchoredPosition = new Vector2(-20, 20); 
-        rectTransform.sizeDelta = new Vector2(400, 60);
-    }
-#endif
 
     public void StopVisibilityCoroutine()
     {
         _isRunning = false;
         _lastSeen.Clear();
+        _stalePlayerIds.Clear();
         if (_visibilityCoroutine != null)
         {
             StopCoroutine(_visibilityCoroutine);

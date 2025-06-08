@@ -25,6 +25,6 @@
 
         <WriteLinesToFile File="$(ManifestFile)" Lines="@(ManifestLines->Replace('{__VERSION__}', '$(Version)'))" Overwrite="true" />
         
-        <ZipDirectory Overwrite="true" SourceDirectory="$(MSBuildProjectDirectory)/$(PublishDir)" DestinationFile="$(PackagePath)" />
+        <ZipDirectory Overwrite="true" SourceDirectory="$(PublishDir)" DestinationFile="$(PackagePath)" />
     </Target>
 </Project>
