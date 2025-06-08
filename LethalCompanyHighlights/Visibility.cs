@@ -99,6 +99,8 @@ public class VisibilityTracker : MonoBehaviour
 
     private IEnumerator InitDebugHud()
     {
+        if (_uiText) yield break;
+        
         yield return new WaitForSeconds(2f);
 
         var canvas = FindObjectOfType<Canvas>();
@@ -133,7 +135,7 @@ public class VisibilityTracker : MonoBehaviour
     public void StopVisibilityCoroutine()
     {
         _isRunning = false;
-        this._lastSeen.Clear();
+        _lastSeen.Clear();
         if (_visibilityCoroutine != null)
         {
             StopCoroutine(_visibilityCoroutine);

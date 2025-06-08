@@ -41,7 +41,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
 #pragma warning disable IDE0051
     private void Awake()
     {
-        DontDestroyOnLoad(this.gameObject);
+        DontDestroyOnLoad(gameObject);
         gameObject.transform.parent = null;
         gameObject.hideFlags = HideFlags.HideAndDontSave;
         
