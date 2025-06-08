@@ -1,15 +1,19 @@
-﻿using BepInEx;
+﻿using System;
+using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
 using LethalConfig;
 using LethalConfig.ConfigItems;
 using LethalConfig.ConfigItems.Options;
+using LobbyCompatibility.Enums;
+using LobbyCompatibility.Features;
 using Steamworks;
+using UnityEngine;
 
 namespace LethalCompanyHighlights;
 
-enum RecordingKind
+internal enum RecordingKind
 {
     Marker,
     Clip
@@ -18,72 +22,82 @@ enum RecordingKind
 [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
 [BepInDependency("ainavt.lc.lethalconfig")]
 [BepInDependency("com.elitemastereric.coroner")]
+[BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.SoftDependency)]
 public class SteamHighlightsPlugin : BaseUnityPlugin
 {
     internal static SteamHighlightsPlugin Instance { get; private set; }
     internal new static ManualLogSource Logger;
 
-    internal static ConfigEntry<bool> isEnabledConfigEntry;
-    internal static ConfigEntry<bool> openOverlayConfigEntry;
-    internal static ConfigEntry<bool> onlyMyDeathsConfigEntry;
-    internal static ConfigEntry<int> overlayDelayConfigEntry;
-    internal static ConfigEntry<int> preDeathDurationConfigEntry;
-    internal static ConfigEntry<int> postDeathDurationConfigEntry;
-    internal static ConfigEntry<RecordingKind> recordingKindConfigEntry;
+    internal static ConfigEntry<bool> IsEnabledConfigEntry;
+    internal static ConfigEntry<bool> OpenOverlayConfigEntry;
+    internal static ConfigEntry<bool> OnlyMyDeathsConfigEntry;
+    internal static ConfigEntry<int> OverlayDelayConfigEntry;
+    internal static ConfigEntry<int> PreDeathDurationConfigEntry;
+    internal static ConfigEntry<int> PostDeathDurationConfigEntry;
+    internal static ConfigEntry<RecordingKind> RecordingKindConfigEntry;
 
-    private Harmony harmony;
+    private Harmony _harmony;
 
 #pragma warning disable IDE0051
     private void Awake()
     {
+        DontDestroyOnLoad(this.gameObject);
+        gameObject.transform.parent = null;
+        gameObject.hideFlags = HideFlags.HideAndDontSave;
+        
         Instance = this;
         Logger = base.Logger;
 
-        Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_GUID} is loaded!");
+        Logger.LogInfo($"Plugin {PluginInfo.PLUGIN_NAME} is loaded!");
+        
+        if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("BMX.LobbyCompatibility"))
+        {
+            PluginHelper.RegisterPlugin(PluginInfo.PLUGIN_GUID, Version.Parse(PluginInfo.PLUGIN_VERSION), CompatibilityLevel.ClientOnly, VersionStrictness.None);
+        }
 
-        isEnabledConfigEntry = Config.Bind<bool>(
+        IsEnabledConfigEntry = Config.Bind(
             "General",
             "Enable",
             true,
             "Enable Steam to capture highlights."
         );
 
-        openOverlayConfigEntry = Config.Bind<bool>(
+        OpenOverlayConfigEntry = Config.Bind(
             "General",
             "Open Overlay on Death",
             true,
             "Would you like to open the Steam Overlay upon death?"
         );
 
-        onlyMyDeathsConfigEntry = Config.Bind<bool>(
+        OnlyMyDeathsConfigEntry = Config.Bind(
             "General",
             "My Deaths Only",
             true,
             "Would you like to open the overlay for all deaths, or just yours?"
         );
 
-        overlayDelayConfigEntry = Config.Bind<int>(
+        OverlayDelayConfigEntry = Config.Bind(
             "General",
             "Overlay Delay",
             5,
             "Delay in seconds before the Steam Overlay will open if enabled.\nMust be between 2 and 60 seconds."
         );
 
-        preDeathDurationConfigEntry = Config.Bind<int>(
+        PreDeathDurationConfigEntry = Config.Bind(
             "Recording",
             "Context Duration",
             10,
             "Duration to record prior to death.\nMust be between 5 and 60 seconds."
         );
 
-        postDeathDurationConfigEntry = Config.Bind<int>(
+        PostDeathDurationConfigEntry = Config.Bind(
             "Recording",
             "Post-Death Duration",
             10,
             "Duration to record after death.\nMust be between 5 and 60 seconds."
         );
 
-        recordingKindConfigEntry = Config.Bind<RecordingKind>(
+        RecordingKindConfigEntry = Config.Bind(
             "General",
             "Recording Style",
             RecordingKind.Clip,
@@ -93,7 +107,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             "Clip: Marks a clip of the death event with duration support, easier for one-click sharing. No pretty icons :("
         );
 
-        var enabledConfigToggle = new BoolCheckBoxConfigItem(isEnabledConfigEntry, new BoolCheckBoxOptions
+        var enabledConfigToggle = new BoolCheckBoxConfigItem(IsEnabledConfigEntry, new BoolCheckBoxOptions
         {
             Name = "Enable Death Capture",
             Description = "Enable Steam to capture highlights, you must have Steam running and have Game Recording enabled in the Steam settings.",
@@ -102,7 +116,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             CanModifyCallback = CanModifySettings
         });
 
-        var openOverlayConfigToggle = new BoolCheckBoxConfigItem(openOverlayConfigEntry, new BoolCheckBoxOptions
+        var openOverlayConfigToggle = new BoolCheckBoxConfigItem(OpenOverlayConfigEntry, new BoolCheckBoxOptions
         {
             Name = "Open Overlay on Death",
             Description = "Would you like to open the Steam Overlay upon death?",
@@ -111,7 +125,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             CanModifyCallback = CanModifySettings
         });
 
-        var onlyMyDeathsConfigToggle = new BoolCheckBoxConfigItem(onlyMyDeathsConfigEntry, new BoolCheckBoxOptions
+        var onlyMyDeathsConfigToggle = new BoolCheckBoxConfigItem(OnlyMyDeathsConfigEntry, new BoolCheckBoxOptions
         {
             Name = "My Deaths Only",
             Description = "Would you like to open the overlay for all deaths, or just yours?",
@@ -120,7 +134,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             CanModifyCallback = CanModifyOverlaySettings
         });
 
-        var overlayDelaySlider = new IntSliderConfigItem(overlayDelayConfigEntry, new IntSliderOptions
+        var overlayDelaySlider = new IntSliderConfigItem(OverlayDelayConfigEntry, new IntSliderOptions
         {
             Name = "Overlay Delay",
             Description = "Delay in seconds before the Steam Overlay will open if enabled.\nMust be between 2 and 60 seconds.",
@@ -131,7 +145,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             CanModifyCallback = CanModifyOverlaySettings
         });
 
-        var recordingKindDropdown = new EnumDropDownConfigItem<RecordingKind>(recordingKindConfigEntry, new EnumDropDownOptions
+        var recordingKindDropdown = new EnumDropDownConfigItem<RecordingKind>(RecordingKindConfigEntry, new EnumDropDownOptions
         {
             Name = "Recording Style",
             Description = "Choose the kind of recording to use.\n\n" +
@@ -144,7 +158,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             CanModifyCallback = CanModifySettings
         });
 
-        var preDeathDurationSlider = new IntSliderConfigItem(preDeathDurationConfigEntry, new IntSliderOptions
+        var preDeathDurationSlider = new IntSliderConfigItem(PreDeathDurationConfigEntry, new IntSliderOptions
         {
             Name = "Context Duration",
             Description = "Duration to record prior to death.\nMust be between 5 and 60 seconds.",
@@ -155,7 +169,7 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
             CanModifyCallback = CanModifyDurationSettings
         });
 
-        var postDeathDurationSlider = new IntSliderConfigItem(postDeathDurationConfigEntry, new IntSliderOptions
+        var postDeathDurationSlider = new IntSliderConfigItem(PostDeathDurationConfigEntry, new IntSliderOptions
         {
             Name = "Post-Death Duration",
             Description = "Duration to record after death.\nMust be between 5 and 60 seconds.",
@@ -175,18 +189,18 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
         LethalConfigManager.AddConfigItem(preDeathDurationSlider);
         LethalConfigManager.AddConfigItem(postDeathDurationSlider);
 
-        harmony = new Harmony(PluginInfo.PLUGIN_GUID);
-        harmony.PatchAll(typeof(RoundPatches));
-        harmony.PatchAll(typeof(PlayerPatches));
+        _harmony = new Harmony(PluginInfo.PLUGIN_GUID);
+        _harmony.PatchAll(typeof(RoundPatches));
+        _harmony.PatchAll(typeof(PlayerPatches));
     }
 
     private void OnDestroy()
     {
-        if (isEnabledConfigEntry.Value)
+        if (IsEnabledConfigEntry.Value)
         {
             SteamTimeline.EndGamePhase();
         }
-        harmony.UnpatchSelf();
+        _harmony.UnpatchSelf();
 
         if (StartOfRound.Instance.localPlayerController.gameObject.TryGetComponent<VisibilityTracker>(out var tracker))
         {
@@ -194,9 +208,9 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
         }
     }
 
-    private CanModifyResult CanModifyOverlaySettings()
+    private static CanModifyResult CanModifyOverlaySettings()
     {
-        if (SteamUtils.IsOverlayEnabled && openOverlayConfigEntry.Value)
+        if (SteamUtils.IsOverlayEnabled && OpenOverlayConfigEntry.Value)
         {
             return CanModifyResult.True();
         }
@@ -206,23 +220,17 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
         }
     }
 
-    private CanModifyResult CanModifyDurationSettings()
+    private static CanModifyResult CanModifyDurationSettings()
     {
-        if (recordingKindConfigEntry.Value == RecordingKind.Marker)
+        return RecordingKindConfigEntry.Value switch
         {
-            return CanModifyResult.False("Duration settings are not applicable for Marker recordings.");
-        }
-        else if (recordingKindConfigEntry.Value == RecordingKind.Clip)
-        {
-            return CanModifyResult.True();
-        }
-        else
-        {
-            return CanModifyResult.False("Unknown recording kind selected.");
-        }
+            RecordingKind.Marker => CanModifyResult.False("Duration settings are not applicable for Marker recordings."),
+            RecordingKind.Clip => CanModifyResult.True(),
+            _ => CanModifyResult.False("Unknown recording kind selected.")
+        };
     }
 
-    private CanModifyResult CanModifySettings()
+    private static CanModifyResult CanModifySettings()
     {
         if (SteamClient.IsValid && SteamUtils.IsOverlayEnabled)
         {

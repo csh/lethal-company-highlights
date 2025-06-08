@@ -9,16 +9,14 @@ namespace LethalCompanyHighlights;
 
 public class VisibilityTracker : MonoBehaviour
 {
-    private bool isRunning = true;
-
-    private readonly IDictionary<ulong, float> lastSeen = new Dictionary<ulong, float>();
-
-    private Coroutine visibilityCoroutine;
+    private readonly IDictionary<ulong, float> _lastSeen = new Dictionary<ulong, float>();
+    private Coroutine _visibilityCoroutine;
+    private bool _isRunning = true;
 
     public void Initialize()
     {
-        isRunning = true;
-        visibilityCoroutine = StartCoroutine(UpdateVisibility());
+        _isRunning = true;
+        _visibilityCoroutine = StartCoroutine(UpdateVisibility());
 
 #if DEBUG
         StartCoroutine(InitDebugHud());
@@ -26,36 +24,34 @@ public class VisibilityTracker : MonoBehaviour
     }
 
     // TODO: More efficiency?
-    bool IsPlayerVisible(PlayerControllerB from, PlayerControllerB to, float maxDistance)
+    private static bool IsPlayerVisible(PlayerControllerB from, PlayerControllerB to, float maxDistance)
     {
-        Vector3 origin = from.gameplayCamera != null
+        var origin = from.gameplayCamera
         ? from.gameplayCamera.transform.position
-        : from.transform.position + Vector3.up * 1.5f;
+        : from.transform.position + Vector3.up * 0.6f;
 
-        Vector3 target = to.transform.position + Vector3.up * 1.5f;
+        var target = to.transform.position + Vector3.up * 0.6f;
 
         if ((origin - target).sqrMagnitude > maxDistance * maxDistance)
             return false;
 
-        if (Physics.Linecast(origin, target, out RaycastHit hit, StartOfRound.Instance.collidersAndRoomMask))
-        {
-            var hitPlayer = hit.collider.GetComponentInParent<PlayerControllerB>();
-            return hitPlayer == to;
-        }
-
-        return true;
+        if (!Physics.Linecast(origin, target, out var hit, StartOfRound.Instance.collidersAndRoomMask))
+            return true;
+        
+        var hitPlayer = hit.collider.GetComponentInParent<PlayerControllerB>();
+        return hitPlayer == to;
     }
 
     private IEnumerator UpdateVisibility()
     {
         var localPlayer = GetComponentInParent<PlayerControllerB>();
-        while (isRunning && localPlayer.isActiveAndEnabled)
+        while (_isRunning && localPlayer.isActiveAndEnabled)
         {
             foreach (var player in StartOfRound.Instance.allPlayerScripts)
             {
                 if (player == localPlayer || player.isActiveAndEnabled == false || player.isPlayerDead) continue;
                 if (!IsPlayerVisible(localPlayer, player, 30f)) continue;
-                lastSeen[player.playerClientId] = Time.unscaledTime;
+                _lastSeen[player.playerClientId] = Time.unscaledTime;
             }
 
 #if DEBUG
@@ -67,31 +63,29 @@ public class VisibilityTracker : MonoBehaviour
     }
 
 #if DEBUG
-    private bool isDebug = false;
+    private bool _isDebug;
     private GameObject _textObject;
     private Text _uiText;
 
     private void UpdateDebugOverlay()
     {
-        if (isDebug && _uiText != null)
+        if (!_isDebug || !_uiText) return;
+        
+        if (_lastSeen.Count == 0)
         {
-
-            if (lastSeen.Count == 0)
+            _uiText.text = "Highlight Debug HUD:\n"
+                           + "Nothing to report, you're alone.";
+        }
+        else
+        {
+            var builder = new StringBuilder();
+            foreach (var playerId in _lastSeen.Keys)
             {
-                _uiText.text = "Highlight Debug HUD:\n"
-                             + "Nothing to report, you're alone.";
+                var player = StartOfRound.Instance.allPlayerScripts[playerId];
+                if (!player || player.isActiveAndEnabled == false) continue;
+                builder.Append($"{player.playerUsername} => {HasSeenRecently(player, 20)}\n");
             }
-            else
-            {
-                var builder = new StringBuilder();
-                foreach (var playerId in lastSeen.Keys)
-                {
-                    var player = StartOfRound.Instance.allPlayerScripts[playerId];
-                    if (player == null || player.isActiveAndEnabled == false) continue;
-                    builder.Append($"{player.playerUsername} => {HasSeenRecently(player, 30)}\n");
-                }
-                _uiText.text = $"Highlight Debug HUD:\n{builder}";
-            }
+            _uiText.text = $"Highlight Debug HUD:\n{builder}";
         }
     }
 
@@ -99,7 +93,7 @@ public class VisibilityTracker : MonoBehaviour
     {
         if (Input.GetKey(KeyCode.F10))
         {
-            isDebug = !isDebug;
+            _isDebug = !_isDebug;
         }
     }
 
@@ -107,10 +101,10 @@ public class VisibilityTracker : MonoBehaviour
     {
         yield return new WaitForSeconds(2f);
 
-        Canvas canvas = FindObjectOfType<Canvas>();
-        if (canvas == null)
+        var canvas = FindObjectOfType<Canvas>();
+        if (!canvas)
         {
-            GameObject canvasGameObject = new GameObject("CustomHUDCanvas");
+            var canvasGameObject = new GameObject("CustomHUDCanvas");
             canvas = canvasGameObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvasGameObject.AddComponent<CanvasScaler>();
@@ -127,7 +121,7 @@ public class VisibilityTracker : MonoBehaviour
         _uiText.color = Color.white;
         _uiText.alignment = TextAnchor.LowerRight;
 
-        RectTransform rectTransform = _uiText.GetComponent<RectTransform>();
+        var rectTransform = _uiText.GetComponent<RectTransform>();
         rectTransform.anchorMin = new Vector2(1, 0); 
         rectTransform.anchorMax = new Vector2(1, 0);
         rectTransform.pivot = new Vector2(1, 0);      
@@ -138,22 +132,17 @@ public class VisibilityTracker : MonoBehaviour
 
     public void StopVisibilityCoroutine()
     {
-        isRunning = false;
-        Clear();
-        if (visibilityCoroutine != null)
+        _isRunning = false;
+        this._lastSeen.Clear();
+        if (_visibilityCoroutine != null)
         {
-            StopCoroutine(visibilityCoroutine);
+            StopCoroutine(_visibilityCoroutine);
         }
-    }
-
-    public void Clear()
-    {
-        lastSeen.Clear();
     }
 
     public bool HasSeenRecently(PlayerControllerB other, float window)
     {
-        return lastSeen.TryGetValue(other.playerClientId, out var seenTime) && (Time.unscaledTime - seenTime) <= window;
+        return _lastSeen.TryGetValue(other.playerClientId, out var seenTime) && (Time.unscaledTime - seenTime) <= window;
     }
 
     public void OnDestroy()
