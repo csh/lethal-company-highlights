@@ -4,7 +4,7 @@
         <TargetFramework>netstandard2.1</TargetFramework>
         <AssemblyName>LethalCompanyHighlights</AssemblyName>
         <Description>Capture deaths in service to the Company via Steam.</Description>
-        <Version>0.1.5</Version>
+        <Version>0.1.6</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>latest</LangVersion>
     </PropertyGroup>
@@ -44,6 +44,9 @@
         </Reference>
         <Reference Include="Unity.Netcode.Runtime">
             <HintPath>$(LethalCompanyPath)\Lethal Company_Data\Managed\Unity.Netcode.Runtime.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.UI">
+            <HintPath>$(LethalCompanyPath)\Lethal Company_Data\Managed\UnityEngine.UI.dll</HintPath>
         </Reference>
     </ItemGroup>
 

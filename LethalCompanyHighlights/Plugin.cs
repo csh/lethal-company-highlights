@@ -6,7 +6,6 @@ using LethalConfig;
 using LethalConfig.ConfigItems;
 using LethalConfig.ConfigItems.Options;
 using Steamworks;
-using Unity.Netcode;
 
 namespace LethalCompanyHighlights;
 
@@ -179,14 +178,10 @@ public class SteamHighlightsPlugin : BaseUnityPlugin
         harmony = new Harmony(PluginInfo.PLUGIN_GUID);
         harmony.PatchAll(typeof(RoundPatches));
         harmony.PatchAll(typeof(PlayerPatches));
-
-        StartOfRound.Instance.NetworkManager.OnClientDisconnectCallback += PlayerPatches.RemoveFromLastSeen;
     }
 
     private void OnDestroy()
     {
-        StartOfRound.Instance.NetworkManager.OnClientDisconnectCallback -= PlayerPatches.RemoveFromLastSeen;
-
         if (isEnabledConfigEntry.Value)
         {
             SteamTimeline.EndGamePhase();

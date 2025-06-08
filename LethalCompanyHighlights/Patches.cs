@@ -52,6 +52,15 @@ class RoundPatches
             if (!player.isActiveAndEnabled) continue;
             SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_group", "Players", 75);
         }
+
+        if (StartOfRound.Instance.localPlayerController.gameObject.TryGetComponent<VisibilityTracker>(out var tracker))
+        {
+            tracker.Initialize();
+        }
+        else
+        {
+            StartOfRound.Instance.localPlayerController.gameObject.AddComponent<VisibilityTracker>().Initialize(); 
+        }
     }
 
     [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.Start))]
@@ -66,6 +75,10 @@ class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ShipLeave))]
     static void ShipLeavePostfix()
     {
+        if (StartOfRound.Instance.localPlayerController.gameObject.TryGetComponent<VisibilityTracker>(out var tracker))
+        {
+            tracker.StopVisibilityCoroutine();
+        }
         SteamTimeline.EndGamePhase();
         currentPhaseId = null;
     }
@@ -73,44 +86,33 @@ class RoundPatches
 
 class PlayerPatches
 {
-    internal static readonly IDictionary<ulong, float> lastSeen = new Dictionary<ulong, float>();
     internal static readonly ISet<string> playersKilled = new HashSet<string>();
-
-    [HarmonyPostfix, HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.Start))]
-    static void StartPostfix(PlayerControllerB __instance)
-    {
-        if (__instance.IsLocalPlayer == false) return;
-        SteamHighlightsPlugin.Logger.LogDebug("Attaching visibility tracker to local player");
-
-        if (!__instance.gameObject.TryGetComponent<VisibilityTracker>(out _))
-        {
-            __instance.gameObject.AddComponent<VisibilityTracker>().Initialize(lastSeen);
-        }
-    }
-
-    internal static void RemoveFromLastSeen(ulong clientId)
-    {
-        if (lastSeen.Remove(clientId))
-        {
-            SteamHighlightsPlugin.Logger.LogDebug("Removed a client from lastSeen tracker");
-        }
-    }
 
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ReviveDeadPlayers))]
     static void ReviveDeadPlayersPostfix()
     {
         SteamHighlightsPlugin.Logger.LogDebug("ReviveDeadPlayers called, clearing killed players list.");
         playersKilled.Clear();
-        lastSeen.Clear();
     }
 
     [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayer))]
     [HarmonyPostfix]
     static void KillPlayerPostfix(PlayerControllerB __instance)
     {
-        SteamHighlightsPlugin.Logger.LogDebug($"Player '{__instance.playerUsername}' died");
         if (SteamHighlightsPlugin.isEnabledConfigEntry.Value == false) return;
         SteamHighlightsPlugin.Instance.StartCoroutine(SaveDeathClip(__instance));
+    }
+
+    [HarmonyPatch(typeof(PlayerControllerB), nameof(PlayerControllerB.KillPlayerClientRpc))]
+    [HarmonyPostfix]
+    static void KillPlayerClientRpcPostfix(int playerId)
+    {
+        if (SteamHighlightsPlugin.isEnabledConfigEntry.Value == false) return;
+        var player = StartOfRound.Instance.allPlayerScripts[playerId];
+        if (player != null && player.isActiveAndEnabled)
+        {
+            SteamHighlightsPlugin.Instance.StartCoroutine(SaveDeathClip(player));
+        }
     }
 
     static bool IsPlayerNearby(PlayerControllerB targetPlayer, float radius)
@@ -132,18 +134,15 @@ class PlayerPatches
         return false;
     }
 
-    private static bool HasSeenRecently(PlayerControllerB target, float window)
-    {
-        return lastSeen.TryGetValue(target.playerClientId, out float seenTime) && (Time.time - seenTime) <= window;
-    }
-
-    static IEnumerator SaveDeathClip(PlayerControllerB player)
+    internal static IEnumerator SaveDeathClip(PlayerControllerB player)
     {
         if (playersKilled.Add(player.playerUsername) == false)
         {
-            SteamHighlightsPlugin.Logger.LogWarning($"Player '{player.playerUsername}' has already been recorded as dead.");
+            SteamHighlightsPlugin.Logger.LogDebug($"Player '{player.playerUsername}' has already been recorded as dead.");
             yield break;
         }
+
+        SteamHighlightsPlugin.Logger.LogError($"Player '{player.playerUsername}' died");
 
         SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_death", "Died", 50);
 
@@ -159,19 +158,55 @@ class PlayerPatches
          *
          * This should probably be adequate to prevent capture of deaths taking place on the other side of the map.
          */
-        if (player != localPlayer)
+
+        bool shouldClip = false;
+
+        if (localPlayer == player)
         {
-            if (!(localPlayer.isPlayerDead && localPlayer.spectatedPlayerScript == player))
+            SteamHighlightsPlugin.Logger.LogError("It was us who died!");
+            shouldClip = true;
+        }
+        else if (localPlayer.isPlayerDead && localPlayer.spectatedPlayerScript == player)
+        {
+            SteamHighlightsPlugin.Logger.LogError($"Observed {player.playerUsername} die in spectator mode");
+            shouldClip = true;
+        }
+        else if (localPlayer.isPlayerDead == false && IsPlayerNearby(player, 12.5f))
+        {
+            SteamHighlightsPlugin.Logger.LogError($"{player.playerUsername} died near us");
+            shouldClip = true;
+        }
+        else if (localPlayer.isPlayerDead == false && localPlayer.gameObject.TryGetComponent<VisibilityTracker>(out var tracker))
+        {
+            if (tracker.HasSeenRecently(player, 15f))
             {
-                if (!(localPlayer.isPlayerDead == false && IsPlayerNearby(player, 8f)))
-                {
-                    if (!(localPlayer.isPlayerDead == false && HasSeenRecently(player, 10f)))
-                    {
-                        yield break;
-                    }
-                }
+                SteamHighlightsPlugin.Logger.LogError($"{player.playerUsername} was seen within the last 15 seconds");
+                shouldClip = true;
+            }
+            else
+            {
+                SteamHighlightsPlugin.Logger.LogError($"{player.playerUsername} was not seen within the last 15 seconds.");
             }
         }
+
+        if (shouldClip == false)
+        {
+            yield break;
+        }
+
+        // if (player != localPlayer)
+            // {
+            //     if (!(localPlayer.isPlayerDead && localPlayer.spectatedPlayerScript == player))
+            //     {
+            //         if (!(localPlayer.isPlayerDead == false && IsPlayerNearby(player, 8f)))
+            //         {
+            //             if (!(localPlayer.isPlayerDead == false && HasSeenRecently(player, 10f)))
+            //             {
+            //                 yield break;
+            //             }
+            //         }
+            //     }
+            // }
 
         SteamHighlightsPlugin.Logger.LogDebug($"Recording death clip for player: '{player.playerUsername}'");
 
