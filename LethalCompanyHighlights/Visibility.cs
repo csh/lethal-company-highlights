@@ -9,15 +9,26 @@ namespace LethalCompanyHighlights;
 
 public class VisibilityTracker : MonoBehaviour
 {
+    internal static VisibilityTracker Instance { get; private set; }
+
     private readonly IDictionary<ulong, float> _lastSeen = new Dictionary<ulong, float>();
     private Coroutine _visibilityCoroutine;
     private bool _isRunning = true;
 
+    public void Awake()
+    {
+        if (Instance)
+        {
+            Destroy(Instance);
+        }
+        Instance = this;
+    }
+    
     public void Initialize()
     {
         _isRunning = true;
         _visibilityCoroutine = StartCoroutine(UpdateVisibility());
-
+        
 #if DEBUG
         StartCoroutine(InitDebugHud());
 #endif
@@ -31,12 +42,17 @@ public class VisibilityTracker : MonoBehaviour
         : from.transform.position + Vector3.up * 0.6f;
 
         var target = to.transform.position + Vector3.up * 0.6f;
-
         if ((origin - target).sqrMagnitude > maxDistance * maxDistance)
+        {
+            SteamHighlightsPlugin.Logger.LogDebug($"Player '{to.playerUsername}' is outside of maxDistance");
             return false;
+        }
 
         if (!Physics.Linecast(origin, target, out var hit, StartOfRound.Instance.collidersAndRoomMask))
+        {
+            SteamHighlightsPlugin.Logger.LogDebug($"Player '{to.playerUsername}' is not occluded by anything");
             return true;
+        }
         
         var hitPlayer = hit.collider.GetComponentInParent<PlayerControllerB>();
         return hitPlayer == to;
@@ -63,7 +79,7 @@ public class VisibilityTracker : MonoBehaviour
     }
 
 #if DEBUG
-    private bool _isDebug;
+    private bool _isDebug = true;
     private GameObject _textObject;
     private Text _uiText;
 

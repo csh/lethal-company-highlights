@@ -13,8 +13,6 @@ namespace LethalCompanyHighlights;
 
 internal class RoundPatches
 {
-    internal static VisibilityTracker VisibilityTracker;
-    
     private static readonly Regex RemoveLeadingNumber = new(@"^\d+\s+", RegexOptions.Compiled);
     private static string _currentPhaseId;
 
@@ -59,7 +57,6 @@ internal class RoundPatches
             tracker = StartOfRound.Instance.localPlayerController.gameObject.AddComponent<VisibilityTracker>();
         }
         tracker.Initialize();
-        VisibilityTracker = tracker;
     }
 
     [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.Start))]
@@ -74,9 +71,9 @@ internal class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ShipLeave))]
     private static void ShipLeavePostfix()
     {
-        if (VisibilityTracker)
+        if (VisibilityTracker.Instance)
         {
-            VisibilityTracker.StopVisibilityCoroutine();
+            VisibilityTracker.Instance.StopVisibilityCoroutine();
         }
         SteamTimeline.EndGamePhase();
         _currentPhaseId = null;
@@ -161,7 +158,7 @@ internal class PlayerPatches
                 SteamHighlightsPlugin.Logger.LogDebug($"{player.playerUsername} died near us");
                 shouldClip = true;
                 break;
-            case false when RoundPatches.VisibilityTracker.HasSeenRecently(player, 20f):
+            case false when VisibilityTracker.Instance.HasSeenRecently(player, 20f):
                 SteamHighlightsPlugin.Logger.LogDebug($"{player.playerUsername} was seen within the last 20 seconds");
                 shouldClip = true;
                 break;
