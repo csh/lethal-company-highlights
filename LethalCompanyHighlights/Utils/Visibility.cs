@@ -5,7 +5,7 @@ using System.Linq;
 using GameNetcodeStuff;
 using UnityEngine;
 
-namespace LethalCompanyHighlights;
+namespace LethalCompanyHighlights.Utils;
 
 public class VisibilityTracker : MonoBehaviour
 {
@@ -79,7 +79,7 @@ public class VisibilityTracker : MonoBehaviour
     private IEnumerator UpdateVisibility()
     {
         var localPlayer = GetComponentInParent<PlayerControllerB>();
-        while (_isRunning && localPlayer.isActiveAndEnabled)
+        while (Features.IsVisibilityEnabled() && _isRunning && IsHumanPlayerAlive(localPlayer))
         {
             var now = Time.unscaledTime;
             foreach (var (playerId, seenAt) in _lastSeen)
@@ -97,7 +97,7 @@ public class VisibilityTracker : MonoBehaviour
             
             _stalePlayerIds.Clear();
             
-            foreach (var player in StartOfRound.Instance.allPlayerScripts.Where(player => IsHumanPlayerAlive(player) && IsPlayerVisible(localPlayer, player, DistanceToCheck)))
+            foreach (var player in StartOfRound.Instance.allPlayerScripts.Where(player => IsHumanPlayerAlive(player) && player != localPlayer && IsPlayerVisible(localPlayer, player, DistanceToCheck)))
             {
                 _lastSeen[player.playerClientId] = now;
             }
@@ -122,7 +122,7 @@ public class VisibilityTracker : MonoBehaviour
         }
     }
 
-    public bool HasSeenRecently(PlayerControllerB other, float window)
+    public bool HasSeenRecently(PlayerControllerB other, float window = SecondsToCheck)
     {
         return _lastSeen.TryGetValue(other.playerClientId, out var seenTime) && (Time.unscaledTime - seenTime) <= window;
     }
