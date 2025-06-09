@@ -8,6 +8,8 @@ using HarmonyLib;
 using Steamworks;
 using Steamworks.Data;
 using UnityEngine;
+using LethalCompanyHighlights.Configuration;
+using LethalCompanyHighlights.Utils;
 
 namespace LethalCompanyHighlights;
 
@@ -34,6 +36,7 @@ internal class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.SetLoadingScreen))]
     private static void SetLoadingScreenPostfix(bool isLoading)
     {
+        if (Features.IsEnabled() == false) return;
         if (!isLoading) return;
         SteamHighlightsPlugin.Logger.LogDebug("MenuManager::SetLoadingScreen, 'LoadingScreen' phase");
         SteamTimeline.SetTimelineGameMode(TimelineGameMode.LoadingScreen);
@@ -42,6 +45,7 @@ internal class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.SetMapScreenInfoToCurrentLevel))]
     private static void SetMapScreenInfoToCurrentLevelPostfix()
     {
+        if (Features.IsEnabled() == false) return;
         SteamHighlightsPlugin.Logger.LogDebug("StartOfRound::SetMapScreenInfoToCurrentLevel, 'Orbiting' phase");
         var planetName = RemoveLeadingNumber.Replace(StartOfRound.Instance.currentLevel.PlanetName, "");
         SteamTimeline.SetTimelineGameMode(TimelineGameMode.Staging);
@@ -51,6 +55,7 @@ internal class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.openingDoorsSequence))]
     private static void OpeningDoorsSequencePostfix()
     {
+        if (Features.IsEnabled() == false) return;
         SteamHighlightsPlugin.Logger.LogDebug("StartOfRound::openingDoorsSequence, 'Exploring' phase");
 
         var planetName = RemoveLeadingNumber.Replace(StartOfRound.Instance.currentLevel.PlanetName, "");
@@ -67,6 +72,10 @@ internal class RoundPatches
             SteamTimeline.AddGamePhaseTag(player.playerUsername, "steam_group", "Players", 75);
         }
 
+        /*
+         * We attach the visibility tracker component regardless, if the feature is disabled then the coroutine that
+         * handles visibility checking will not run.
+         */
         if (!StartOfRound.Instance.localPlayerController.gameObject.TryGetComponent<VisibilityTracker>(out var tracker))
         {
             tracker = StartOfRound.Instance.localPlayerController.gameObject.AddComponent<VisibilityTracker>();
@@ -77,7 +86,7 @@ internal class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(MenuManager), nameof(MenuManager.Start))]
     private static void StartPostfix()
     {
-        if (GameNetworkManager.Instance.disableSteam) return;
+        if (Features.IsEnabled() == false) return;
         SteamTimeline.EndGamePhase();
         SteamTimeline.SetTimelineGameMode(TimelineGameMode.Menus);
         SimpleDeathTracker.Reset();
@@ -87,6 +96,7 @@ internal class RoundPatches
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ShipLeave))]
     private static void ShipLeavePostfix()
     {
+        if (Features.IsEnabled() == false) return;
         if (VisibilityTracker.Instance)
         {
             VisibilityTracker.Instance.StopVisibilityCoroutine();
@@ -101,6 +111,7 @@ internal class PlayerPatches
     [HarmonyPostfix, HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ReviveDeadPlayers))]
     private static void ReviveDeadPlayersPostfix()
     {
+        if (Features.IsEnabled() == false) return;
         SteamHighlightsPlugin.Logger.LogDebug("ReviveDeadPlayers called, clearing killed players list.");
         SimpleDeathTracker.Reset();
     }
@@ -129,7 +140,7 @@ internal class PlayerPatches
 
     private static IEnumerator SaveDeathClip(PlayerControllerB player)
     {
-        if (SteamHighlightsPlugin.IsEnabledConfigEntry.Value == false) yield break;
+        if (Features.IsEnabled() == false) yield break;
         
         if (SimpleDeathTracker.PlayerKilled(player) == false)
         {
@@ -166,15 +177,15 @@ internal class PlayerPatches
         }
         else switch (localPlayer.isPlayerDead)
         {
-            case true when localPlayer.spectatedPlayerScript == player:
+            case true when Features.IsClippingEnabledForOthers() && localPlayer.spectatedPlayerScript == player:
                 SteamHighlightsPlugin.Logger.LogDebug($"Observed {player.playerUsername} die in spectator mode");
                 shouldClip = true;
                 break;
-            case false when IsPlayerNearby(player, 10f):
+            case false when Features.IsProximityEnabled() && IsPlayerNearby(player, 10f):
                 SteamHighlightsPlugin.Logger.LogDebug($"{player.playerUsername} died near us");
                 shouldClip = true;
                 break;
-            case false when VisibilityTracker.Instance.HasSeenRecently(player, VisibilityTracker.SecondsToCheck):
+            case false when Features.IsVisibilityEnabled() && VisibilityTracker.Instance.HasSeenRecently(player):
                 SteamHighlightsPlugin.Logger.LogDebug($"{player.playerUsername} was seen within the last 20 seconds");
                 shouldClip = true;
                 break;
@@ -200,7 +211,7 @@ internal class PlayerPatches
         var clipName = $"{player.playerUsername} died";
 
         TimelineEventHandle handle;
-        if (SteamHighlightsPlugin.RecordingKindConfigEntry.Value == RecordingKind.Marker)
+        if (PluginConfig.RecordingKindConfigEntry.Value == RecordingKind.Marker)
         {
             handle = SteamTimeline.AddInstantaneousTimelineEvent(
                 clipName,
@@ -218,20 +229,20 @@ internal class PlayerPatches
                 causeOfDeath,
                 "steam_death",
                 priority,
-                -SteamHighlightsPlugin.PreDeathDurationConfigEntry.Value,
-                SteamHighlightsPlugin.PreDeathDurationConfigEntry.Value + SteamHighlightsPlugin.PostDeathDurationConfigEntry.Value,
+                -PluginConfig.PreDeathDurationConfigEntry.Value,
+                PluginConfig.PreDeathDurationConfigEntry.Value + PluginConfig.PostDeathDurationConfigEntry.Value,
                 TimelineEventClipPriority.Featured
             );
         }
 
-        if (!SteamHighlightsPlugin.OpenOverlayConfigEntry.Value) yield break;
+        if (!PluginConfig.OpenOverlayConfigEntry.Value) yield break;
         
-        if (SteamHighlightsPlugin.OnlyMyDeathsConfigEntry.Value && player != StartOfRound.Instance.localPlayerController)
+        if (PluginConfig.OnlyMyDeathsConfigEntry.Value && player != StartOfRound.Instance.localPlayerController)
         {
             yield break;
         }
 
-        yield return new WaitForSecondsRealtime(SteamHighlightsPlugin.OverlayDelayConfigEntry.Value);
+        yield return new WaitForSecondsRealtime(PluginConfig.OverlayDelayConfigEntry.Value);
         SteamTimeline.OpenOverlayToTimelineEvent(handle);
     }
 }

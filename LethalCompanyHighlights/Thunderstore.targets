@@ -1,4 +1,14 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <DebugType>none</DebugType>
+        <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+        <DebugType>portable</DebugType>
+        <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    </PropertyGroup>
+    
     <PropertyGroup>
         <PackageDir Condition="'$(PackageDir)' == ''">$([System.IO.Path]::Combine($(OutputPath),'package'))/</PackageDir>
         <PackagePath Condition="'$(PackagePath)' == ''">$([System.IO.Path]::Combine($(PackageDir),'$(AssemblyName)-v$(Version).zip'))</PackagePath>
@@ -7,7 +17,14 @@
     <Target Name="PackageClean" AfterTargets="Clean">
         <RemoveDir Directories="$(PackageDir)"/>
     </Target>
-
+    
+    <Target Name="StripExtraFilesForRelease" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+        <ItemGroup>
+            <FilesToDelete Include="$(PublishDir)\*.pdb;$(PublishDir)\*.deps.json" />
+        </ItemGroup>
+        <Delete Files="@(FilesToDelete)" />
+    </Target>
+    
     <Target Name="Thunderstore" AfterTargets="Publish">
         <MakeDir Directories="$(PackageDir)" />  
 
