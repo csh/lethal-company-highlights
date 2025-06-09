@@ -2,8 +2,8 @@
     <PropertyGroup>
         <TargetFramework>netstandard2.1</TargetFramework>
         <AssemblyName>LethalCompanyHighlights</AssemblyName>
-        <Description>Capture deaths in service to the Company via Steam.</Description>
-        <Version>0.1.6</Version>
+        <Description>Record, clip, and annotate your Lethal Company deaths with Steam. Your incompetence, now professionally documented. </Description>
+        <Version>0.1.7</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>latest</LangVersion>
     </PropertyGroup>
