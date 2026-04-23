@@ -3,7 +3,7 @@
         <TargetFramework>netstandard2.1</TargetFramework>
         <AssemblyName>LethalCompanyHighlights</AssemblyName>
         <Description>Record, clip, and annotate your Lethal Company deaths with Steam. Your incompetence, now professionally documented. </Description>
-        <Version>0.1.7</Version>
+        <Version>0.1.8</Version>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>latest</LangVersion>
     </PropertyGroup>
