@@ -10,7 +10,7 @@ namespace LethalCompanyHighlights;
 
 [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
 [BepInDependency("ainavt.lc.lethalconfig")]
-[BepInDependency("com.elitemastereric.coroner")]
+[BepInDependency("com.elitemastereric.coroner", BepInDependency.DependencyFlags.SoftDependency)]
 [BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.SoftDependency)]
 public class SteamHighlightsPlugin : BaseUnityPlugin
 {

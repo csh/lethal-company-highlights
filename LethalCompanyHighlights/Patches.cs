@@ -201,11 +201,7 @@ internal class PlayerPatches
 
         SteamHighlightsPlugin.Logger.LogDebug($"Recording death clip for player: '{player.playerUsername}'");
 
-        var cause = Coroner.API.GetCauseOfDeath(player);
-
-        var causeOfDeath = cause.HasValue
-            ? Coroner.API.StringifyCauseOfDeath(cause.Value, null)
-            : "Unknown cause of death.";
+        var cause = Features.GetCauseOfDeath(player);
 
         var priority = StartOfRound.Instance.localPlayerController == player ? 100u : 90u;
         var clipName = $"{player.playerUsername} died";
@@ -215,7 +211,7 @@ internal class PlayerPatches
         {
             handle = SteamTimeline.AddInstantaneousTimelineEvent(
                 clipName,
-                causeOfDeath,
+                cause,
                 "steam_death",
                 priority,
                 0,
@@ -226,7 +222,7 @@ internal class PlayerPatches
         {
             handle = SteamTimeline.AddRangeTimelineEvent(
                 clipName,
-                causeOfDeath,
+                cause,
                 "steam_death",
                 priority,
                 -PluginConfig.PreDeathDurationConfigEntry.Value,
