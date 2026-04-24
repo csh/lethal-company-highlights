@@ -32,6 +32,7 @@ public class VisibilityTracker : MonoBehaviour
     
     public void Initialize()
     {
+        StopVisibilityCoroutine();
         _isRunning = true;
         _visibilityCoroutine = StartCoroutine(UpdateVisibility());
     }
@@ -97,13 +98,16 @@ public class VisibilityTracker : MonoBehaviour
             
             _stalePlayerIds.Clear();
             
-            foreach (var player in StartOfRound.Instance.allPlayerScripts.Where(player => IsHumanPlayerAlive(player) && player != localPlayer && IsPlayerVisible(localPlayer, player, DistanceToCheck)))
+            foreach (var player in StartOfRound.Instance.allPlayerScripts)
             {
+                if (player == localPlayer || !IsHumanPlayerAlive(player)) continue;
+                if (!IsPlayerVisible(localPlayer, player, DistanceToCheck)) continue;
                 _lastSeen[player.playerClientId] = now;
             }
 
             yield return new WaitForSecondsRealtime(0.5f);
         }
+        _lastSeen.Clear();
     }
 
     private static bool IsHumanPlayerAlive(PlayerControllerB player)
